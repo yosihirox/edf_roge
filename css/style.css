@@ -32,11 +32,11 @@ footer { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
 .deploy.poor .cost { color: #ef5350; }
 #waveBtn { min-width: 180px; font-weight: bold; background: #1b5e20; border-color: #66bb6a; }
 #help { font-size: 11px; color: #78909c; margin-top: 6px; }
-.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: flex; align-items: center; justify-content: center; z-index: 10; padding: 16px; overflow-y: auto; }
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.75); display: flex; align-items: safe center; justify-content: center; z-index: 10; padding: 16px; overflow-y: auto; }
 .panel { background: #1c252b; border: 1px solid #546e7a; border-radius: 10px; padding: 20px 28px; text-align: center; max-width: 640px; width: 100%; }
 .title-panel h1 { font-size: 56px; margin: 4px 0 8px; color: #ffeb3b; letter-spacing: 6px; text-shadow: 0 3px 0 #b71c1c; }
 .title-panel h1 small { display: block; font-size: 18px; letter-spacing: 2px; color: #fff; text-shadow: none; }
-#titleArt { width: 100%; border-radius: 6px; margin-bottom: 6px; }
+#titleArt { width: 100%; max-height: 32vh; object-fit: cover; border-radius: 6px; margin-bottom: 6px; }
 .lead { color: #cfd8dc; }
 h3 { margin: 12px 0 6px; font-size: 14px; color: #90a4ae; }
 .choices { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }

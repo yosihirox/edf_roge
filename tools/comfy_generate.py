@@ -128,6 +128,7 @@ def remove_white_bg(img, tol=28):
             continue
         px[x, y] = (r, g, b, 0)
         stack.extend(((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)))
+    keep_largest(img)
     bbox = img.getbbox()
     if bbox:
         img = img.crop(bbox)
@@ -136,6 +137,40 @@ def remove_white_bg(img, tol=28):
         sq.paste(img, ((side - img.size[0]) // 2, (side - img.size[1]) // 2))
         img = sq
     return img
+
+
+def keep_largest(img):
+    """不透明部分のうち最大の塊だけを残す (背景に描かれた小さな人影などを消す)。"""
+    w, h = img.size
+    px = img.load()
+    label = [0] * (w * h)
+    sizes = {}
+    n = 0
+    for sy in range(h):
+        for sx in range(w):
+            if label[sy * w + sx] or px[sx, sy][3] == 0:
+                continue
+            n += 1
+            cnt = 0
+            stack = [(sx, sy)]
+            label[sy * w + sx] = n
+            while stack:
+                x, y = stack.pop()
+                cnt += 1
+                for nx, ny in ((x + 1, y), (x - 1, y), (x, y + 1), (x, y - 1)):
+                    if 0 <= nx < w and 0 <= ny < h and not label[ny * w + nx] and px[nx, ny][3]:
+                        label[ny * w + nx] = n
+                        stack.append((nx, ny))
+            sizes[n] = cnt
+    if not sizes:
+        return
+    big = max(sizes, key=sizes.get)
+    for y in range(h):
+        for x in range(w):
+            l = label[y * w + x]
+            if l and l != big and sizes[l] < sizes[big] * 0.15:
+                r, g, b, a = px[x, y]
+                px[x, y] = (r, g, b, 0)
 
 
 def postprocess(data, asset):
