@@ -5,7 +5,9 @@ EDF6（地球防衛軍6）の兵科と装備をモチーフにした、ブラウ
 
 ## 遊び方
 
-`index.html` をブラウザで開くだけで動きます（サーバー不要・ビルド不要）。
+公開URL: https://yosihirox.github.io/edf_roge/ （`main` へのプッシュで GitHub Actions が自動デプロイ）
+
+手元では `index.html` をブラウザで開くだけで動きます（サーバー不要・ビルド不要）。
 
 1. タイトルで作戦地域（マップ3種）と難易度（EASY / NORMAL / HARD / INFERNO）を選んで「出撃」
 2. 最初に「初期装備」を3枚のカードから1枚選ぶ

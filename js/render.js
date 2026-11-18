@@ -30,7 +30,7 @@ function drawBackground(ctx, G) {
   const bgKey = ['bg_city', 'bg_mountain', 'bg_coast'][G.mapIndex];
   if (IMG[bgKey]) {
     ctx.drawImage(IMG[bgKey], 0, 0, W, H);
-    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.fillStyle = 'rgba(10,14,18,0.55)';
     ctx.fillRect(0, 0, W, H);
   } else {
     const base = ['#3b4237', '#3f4a33', '#3a4a4f'][G.mapIndex];
@@ -103,7 +103,14 @@ function drawUnit(ctx, u, G, selected) {
     ctx.fill();
     ctx.stroke();
   }
-  if (!drawSpriteImage(ctx, 'unit_' + u.cls, u.x, u.y, size + 10, u.angle)) {
+  if (IMG['unit_' + u.cls]) {
+    // 画像の下に兵科カラーの台座を描いて見分けやすくする
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.ellipse(u.x, u.y + 12, 17, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = cls.color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(u.x, u.y + 12, 17, 7, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (!drawSpriteImage(ctx, 'unit_' + u.cls, u.x, u.y - 2, size + 14, u.angle)) {
     drawUnitShape(ctx, u.cls, u.x, u.y, u.angle, cls.color);
   }
   ctx.restore();
@@ -203,7 +210,7 @@ function drawEnemy(ctx, e, t) {
   const d = ENEMIES[e.type];
   const s = d.size;
   if (e.hitFlash > 0) ctx.filter = 'brightness(2.2)';
-  if (!drawSpriteImage(ctx, 'enemy_' + e.type, e.x, e.y, s * 2.6, e.angle)) {
+  if (!drawSpriteImage(ctx, 'enemy_' + e.type, e.x, e.y, s * 3, e.angle)) {
     drawEnemyShape(ctx, e, d, t);
   }
   ctx.filter = 'none';
