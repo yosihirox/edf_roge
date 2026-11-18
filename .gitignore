@@ -1,0 +1,5 @@
+# 公式絵などの参考画像はコミットしない
+assets/reference/*
+!assets/reference/.gitkeep
+__pycache__/
+.DS_Store
