@@ -1,5 +1,5 @@
 // オフライン用キャッシュ。ネットにつながる時は常に最新を取りに行き、失敗した時だけキャッシュを使う
-const CACHE = 'hoshitsugi-v1';
+const CACHE = 'hoshitsugi-v2';
 self.addEventListener('install', e => self.skipWaiting());
 self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
 self.addEventListener('fetch', e => {
