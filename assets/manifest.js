@@ -368,6 +368,247 @@ window.ASSET_MANIFEST = {
       "width": 1024,
       "height": 1024,
       "prompt": "no humans, game item icon, falling meteor with fire trail, centered, simple dark background"
+    },
+    {
+      "key": "item_chest",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, ornate golden treasure chest, closed, red velvet trim, glowing gems, fantasy game item, single object"
+    },
+    {
+      "key": "item_chest_open",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, open golden treasure chest overflowing with light and gold coins, fantasy game item, single object"
+    },
+    {
+      "key": "item_coin",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, shiny gold coin with star emblem, game item, single object"
+    },
+    {
+      "key": "item_gem_s",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, small green crystal gem, faceted, shiny, game item, single object"
+    },
+    {
+      "key": "item_gem_m",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, blue crystal gem, faceted, shiny, game item, single object"
+    },
+    {
+      "key": "item_gem_l",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, large pink crystal gem, faceted, sparkling, game item, single object"
+    },
+    {
+      "key": "item_cake",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, strawberry shortcake slice, cute food, game item, single object"
+    },
+    {
+      "key": "item_magnet",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, red horseshoe magnet, sparkle, game item, single object"
+    },
+    {
+      "key": "fx_star",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, glowing yellow star shaped magic projectile with sparkles"
+    },
+    {
+      "key": "fx_arrow",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, glowing green energy arrow, horizontal, pointing right"
+    },
+    {
+      "key": "fx_shard",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, glowing ice crystal shard, horizontal, pointing right"
+    },
+    {
+      "key": "fx_fireball",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, blazing fireball, flames"
+    },
+    {
+      "key": "fx_slash",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, crescent sword slash arc, white and red energy trail"
+    },
+    {
+      "key": "fx_explosion",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, big fiery explosion burst, round"
+    },
+    {
+      "key": "fx_lightning",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, vertical lightning bolt strike, electric blue and white"
+    },
+    {
+      "key": "fx_orb",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, glowing holy magic orb, white and gold light"
+    },
+    {
+      "key": "fx_moon",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, glowing golden crescent moon blade"
+    },
+    {
+      "key": "fx_foxfire",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, orange fox fire spirit flame wisp"
+    },
+    {
+      "key": "fx_tornado",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, green whirlwind tornado, wind swirl"
+    },
+    {
+      "key": "fx_holy",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view of glowing blue holy water splash circle"
+    },
+    {
+      "key": "fx_rune",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view of glowing purple magic circle with runes"
+    },
+    {
+      "key": "fx_meteor",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, flaming meteor falling diagonally with fire trail"
+    },
+    {
+      "key": "fx_bullet",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, red glowing energy orb bullet"
+    },
+    {
+      "key": "fx_beam",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, horizontal cyan laser beam, straight, wide"
+    },
+    {
+      "key": "fx_aura",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view of golden ring of holy light, circle"
+    },
+    {
+      "key": "fx_hit",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, bright white impact spark burst, small"
+    },
+    {
+      "key": "fx_burst",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, radial burst of light rays, rainbow sparkles"
+    },
+    {
+      "key": "fx_burn",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view of burning fire on ground, flames circle"
+    },
+    {
+      "key": "fx_frost",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view of frost ice burst, snowflakes"
+    },
+    {
+      "key": "fx_thunder",
+      "kind": "fx",
+      "size": 256,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, electric spark ball, blue lightning"
     }
-  ]
+  ],
+  "fx_suffix": "visual effect, glowing light, pure black background, centered, isolated, no characters, no text"
 };
