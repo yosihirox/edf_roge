@@ -223,41 +223,6 @@ window.ASSET_MANIFEST = {
       "prompt": "no humans, giant battle robot boss, heavy armor, red visor, cannons, full body"
     },
     {
-      "key": "tile_forest",
-      "kind": "tile",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, no animals, no objects, no characters, top-down view, flat ground texture filling the whole image, seamless texture, forest floor grass with small flowers and dirt patches, flat ground, game texture, no objects, no shadow"
-    },
-    {
-      "key": "tile_snow",
-      "kind": "tile",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, no animals, no objects, no characters, top-down view, flat ground texture filling the whole image, seamless texture, snowy ground with ice patches and footprints, flat ground, game texture, no objects, no shadow"
-    },
-    {
-      "key": "tile_ruins",
-      "kind": "tile",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, no animals, no objects, no characters, top-down view, flat ground texture filling the whole image, seamless texture, cracked stone pavement of ruined city with moss, flat ground, game texture, no objects, no shadow"
-    },
-    {
-      "key": "tile_desert",
-      "kind": "tile",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, no animals, no objects, no characters, top-down view, flat ground texture filling the whole image, seamless texture, desert sand with small rocks and dry cracks, flat ground, game texture, no objects, no shadow"
-    },
-    {
-      "key": "tile_station",
-      "kind": "tile",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, no animals, no objects, no characters, top-down view, flat ground texture filling the whole image, seamless texture, sci-fi metal floor panels with glowing lines, flat ground, game texture, no objects, no shadow"
-    },
-    {
       "key": "icon_wand",
       "kind": "icon",
       "width": 1024,
