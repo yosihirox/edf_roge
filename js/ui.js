@@ -196,7 +196,7 @@ const UI = {
             <button class="cta" data-act="prep"><span class="ctamain">出撃する</span><span class="ctasub">キャラクターとステージを選ぶ</span></button>
             <div class="sect">拠点</div>
             <div class="facs">${facs}</div>
-            <p class="hint">移動だけで戦えます（WASD／矢印キー、スマホは画面をなぞる）。必殺技は Space か右下のボタン。</p>
+            <p class="hint">移動だけで戦えます（WASD／矢印キー、スマホは画面の下側をなぞる）。必殺技は Space か右下のボタン。</p>
           </div>
         </div>
       </div>`);

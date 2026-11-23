@@ -13,23 +13,38 @@ const Input = {
     });
     window.addEventListener('keyup', e => { this.keys[e.code] = false; });
     window.addEventListener('blur', () => { this.keys = {}; this.joy = null; });
-    // どこを触っても、その位置を中心にしたバーチャルスティック
+    // スマホ縦画面では、画面の下側だけを操作エリアにする（指でキャラや敵を隠さないため）。
+    // エリア内ならどこを触っても、そこを中心にしたスティックが出る
     canvas.addEventListener('pointerdown', e => {
       Sound.init(); Sound.resume();
-      canvas.setPointerCapture(e.pointerId);
+      const r = canvas.getBoundingClientRect();
+      if (e.pointerType === 'touch') this.touch = true;
+      if (this.zoneOn() && e.clientY - r.top < r.height * (1 - this.ZONE)) { this.hintT = 1.6; return; }
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 取れなくても操作は続けられる */ }
       this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: e.clientX, y: e.clientY };
     });
-    canvas.addEventListener('pointermove', e => { if (this.joy && this.joy.id === e.pointerId) { this.joy.x = e.clientX; this.joy.y = e.clientY; } });
+    canvas.addEventListener('pointermove', e => {
+      const j = this.joy; if (!j || j.id !== e.pointerId) return;
+      j.x = e.clientX; j.y = e.clientY;
+      // 相対ドラッグ：指が外枠を越えたら、スティックの中心も指についてくる。
+      // 向きを変える時に指を大きく戻さなくて済む
+      const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy);
+      if (d > this.RAD) { j.ox = j.x - dx / d * this.RAD; j.oy = j.y - dy / d * this.RAD; }
+    });
     const end = e => { if (this.joy && this.joy.id === e.pointerId) this.joy = null; };
     canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
   },
+  ZONE: 0.36,   // 操作エリアの高さ（画面の下から何割か）
+  RAD: 38,      // スティックの半径。小さな指の動きで最大速度になる
+  touch: (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches), hintT: 0,
+  zoneOn() { return this.touch && Render.h > Render.w * 1.15; },
   vector() {
     let x = 0, y = 0; const k = this.keys;
     if (k.KeyA || k.ArrowLeft) x -= 1; if (k.KeyD || k.ArrowRight) x += 1;
     if (k.KeyW || k.ArrowUp) y -= 1; if (k.KeyS || k.ArrowDown) y += 1;
     if (this.joy) {
       const dx = this.joy.x - this.joy.ox, dy = this.joy.y - this.joy.oy; const d = Math.hypot(dx, dy);
-      if (d > 6) { const m = Math.min(1, d / 50); x = dx / d * m; y = dy / d * m; }
+      if (d > 5) { const m = Math.min(1, (d - 5) / (this.RAD - 9)); x = dx / d * m; y = dy / d * m; }
     }
     const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
     return { x, y };
@@ -37,7 +52,8 @@ const Input = {
 };
 
 const Render = {
-  cv: null, ctx: null, w: 0, h: 0, dpr: 1, zoom: 1,
+  cv: null, ctx: null, w: 0, h: 0, dpr: 1, zoom: 1, camOff: 0,
+  camY() { return this.camOff / this.zoom; }, // カメラのずらし量（ワールド座標）
   init(canvas) {
     this.cv = canvas; this.ctx = canvas.getContext('2d');
     const fit = () => {
@@ -48,6 +64,8 @@ const Render = {
       canvas.style.width = r.width + 'px'; canvas.style.height = r.height + 'px';
       // 短い辺に約560ドット分の世界が映るように
       this.zoom = Math.min(r.width, r.height) / 560;
+      // 縦画面ではキャラを画面の少し上に映す（下側は指を置く場所として空ける）
+      this.camOff = r.height > r.width * 1.15 ? Math.round(r.height * 0.1) : 0;
     };
     window.addEventListener('resize', fit); fit();
     this.fit = fit;
@@ -128,11 +146,12 @@ const Render = {
     if (R.shake > 0 && Save.data.settings.shake) { const q = performance.now() * 0.034; sx = R.shake * (Math.sin(q * 1.7) * 0.65 + Math.sin(q * 3.3) * 0.35); sy = R.shake * (Math.sin(q * 2.3 + 1) * 0.65 + Math.sin(q * 4.1) * 0.35); }
     const zm = this.zoom * (1 + (Save.data.settings.shake ? R.zoomKick : 0));
     c.save();
-    c.translate(this.w / 2 + sx, this.h / 2 + sy);
+    c.translate(this.w / 2 + sx, this.h / 2 - this.camOff + sy);
     c.scale(zm, zm);
     c.translate(-p.x, -p.y);
     const v = this.viewSize();
-    const L = p.x - v.w / 2 - 80, T = p.y - v.h / 2 - 80, Rr = p.x + v.w / 2 + 80, B = p.y + v.h / 2 + 80;
+    const cy = p.y + this.camY();
+    const L = p.x - v.w / 2 - 80, T = cy - v.h / 2 - 80, Rr = p.x + v.w / 2 + 80, B = cy + v.h / 2 + 80;
     this.drawGround(c, R, p, v);
     const light = Save.data.settings.light;
     const t = R.t;
@@ -226,7 +245,7 @@ const Render = {
     // 画面の外にある宝箱・ボスの方向を、画面のふちに矢印で示す
     const hw = this.w / 2, hh = this.h / 2, mg = 34;
     const mark = (wx, wy, col, img) => {
-      const dx = (wx - p.x) * zm, dy = (wy - p.y) * zm;
+      const dx = (wx - p.x) * zm, dy = (wy - p.y) * zm - this.camOff;
       if (Math.abs(dx) < hw - 10 && Math.abs(dy) < hh - 10) return;
       const k = Math.min((hw - mg) / Math.abs(dx || 1), (hh - mg) / Math.abs(dy || 1));
       const x = hw + dx * k, y = Math.min(this.h - mg - 60, Math.max(mg + 70, hh + dy * k)), a = Math.atan2(dy, dx);
@@ -239,17 +258,30 @@ const Render = {
     };
     for (const o of R.drops) if (o.kind === 'chest') mark(o.x, o.y, '#ffd166', 'item_chest');
     for (const b of R.bossIds) if (!b.dead) mark(b.x, b.y, '#ff4f7b', b.def.img);
+    // 操作エリアの案内（開始直後と、エリアの外を触った時だけ、うっすら表示）
+    if (Input.zoneOn() && !R.over) {
+      if (Input.hintT > 0) Input.hintT -= 1 / 60;
+      const a = Math.min(1, Math.max(Input.joy ? 0 : R.intro, Input.hintT));
+      if (a > 0) {
+        const zy = this.h * (1 - Input.ZONE);
+        const g = c.createLinearGradient(0, zy, 0, this.h); g.addColorStop(0, 'rgba(126,224,255,0)'); g.addColorStop(0.25, `rgba(126,224,255,${0.16 * a})`); g.addColorStop(1, `rgba(126,224,255,${0.05 * a})`);
+        c.fillStyle = g; c.fillRect(0, zy, this.w, this.h - zy);
+        c.strokeStyle = `rgba(190,240,255,${0.55 * a})`; c.lineWidth = 1.5; c.setLineDash([6, 8]); c.beginPath(); c.moveTo(16, zy + 14); c.lineTo(this.w - 16, zy + 14); c.stroke(); c.setLineDash([]);
+        c.fillStyle = `rgba(255,255,255,${0.9 * a})`; c.font = `700 14px ${this.font}`; c.textAlign = 'center'; c.shadowColor = 'rgba(0,0,0,.8)'; c.shadowBlur = 6;
+        c.fillText('この下をなぞって移動', this.w / 2, zy + 44); c.shadowBlur = 0;
+      }
+    }
     // スティック
     if (Input.joy && !R.over) {
       const j = Input.joy; const r = this.cv.getBoundingClientRect();
       const ox = j.ox - r.left, oy = j.oy - r.top;
-      const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy), m = Math.min(d, 50);
+      const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy), m = Math.min(d, Input.RAD);
       c.save();
       c.fillStyle = 'rgba(255,255,255,.07)'; c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 2;
-      c.beginPath(); c.arc(ox, oy, 52, 0, TAU); c.fill(); c.stroke();
+      c.beginPath(); c.arc(ox, oy, Input.RAD + 6, 0, TAU); c.fill(); c.stroke();
       const kx = ox + (d ? dx / d * m : 0), ky = oy + (d ? dy / d * m : 0);
       const g = c.createRadialGradient(kx - 6, ky - 6, 2, kx, ky, 24); g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(255,170,215,.75)');
-      c.fillStyle = g; c.shadowColor = 'rgba(255,126,185,.8)'; c.shadowBlur = 14; c.beginPath(); c.arc(kx, ky, 23, 0, TAU); c.fill();
+      c.fillStyle = g; c.shadowColor = 'rgba(255,126,185,.8)'; c.shadowBlur = 14; c.beginPath(); c.arc(kx, ky, 19, 0, TAU); c.fill();
       c.restore();
     }
     if (R.cutin) this.drawCutin(c, R.cutin);
@@ -259,7 +291,7 @@ const Render = {
     const img = this.groundTile(R.stage.color);
     const S = 512;
     const x0 = Math.floor((p.x - v.w / 2) / S) - 1, x1 = Math.floor((p.x + v.w / 2) / S) + 1;
-    const y0 = Math.floor((p.y - v.h / 2) / S) - 1, y1 = Math.floor((p.y + v.h / 2) / S) + 1;
+    const y0 = Math.floor((p.y - v.h / 2) / S) - 1, y1 = Math.floor((p.y + v.h / 2 + this.camY()) / S) + 1;
     for (let ix = x0; ix <= x1; ix++) for (let iy = y0; iy <= y1; iy++) c.drawImage(img, ix * S, iy * S);
   },
 
