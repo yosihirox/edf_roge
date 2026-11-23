@@ -52,6 +52,39 @@ const Render = {
     window.addEventListener('resize', fit); fit();
     this.fit = fit;
   },
+  font: '"Zen Maru Gothic", "Hiragino Maru Gothic ProN", "Yu Gothic UI", sans-serif',
+  rr(c, x, y, w, h, r) { r = Math.min(r, w / 2, h / 2); c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); },
+  // メニュー画面の背景：夜空と、またたく星、ときどき流れ星
+  drawMenuBg(now) {
+    const c = this.ctx, w = this.w, h = this.h, t = now / 1000;
+    c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    if (!this._sky || this._sky.w !== w || this._sky.h !== h) {
+      const g = c.createLinearGradient(0, 0, 0, h); g.addColorStop(0, '#1b1440'); g.addColorStop(0.55, '#120e2b'); g.addColorStop(1, '#0a0818');
+      const g2 = c.createRadialGradient(w * 0.75, h * 0.1, 0, w * 0.75, h * 0.1, Math.max(w, h) * 0.7); g2.addColorStop(0, 'rgba(255,126,185,.20)'); g2.addColorStop(0.5, 'rgba(120,90,255,.08)'); g2.addColorStop(1, 'rgba(0,0,0,0)');
+      const g3 = c.createRadialGradient(w * 0.1, h * 0.95, 0, w * 0.1, h * 0.95, Math.max(w, h) * 0.6); g3.addColorStop(0, 'rgba(90,200,255,.14)'); g3.addColorStop(1, 'rgba(0,0,0,0)');
+      let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+      const stars = []; const n = Math.round(w * h / 5200);
+      for (let i = 0; i < n; i++) stars.push({ x: rnd(), y: rnd(), r: 0.5 + rnd() * rnd() * 1.8, p: rnd() * TAU, s: 0.4 + rnd() * 1.8, gold: rnd() < 0.15 });
+      this._sky = { w, h, g, g2, g3, stars, shoot: null, next: t + 3 };
+    }
+    const k = this._sky;
+    c.fillStyle = k.g; c.fillRect(0, 0, w, h); c.fillStyle = k.g2; c.fillRect(0, 0, w, h); c.fillStyle = k.g3; c.fillRect(0, 0, w, h);
+    for (const s of k.stars) {
+      const a = 0.35 + 0.65 * (0.5 + 0.5 * Math.sin(t * s.s + s.p));
+      c.globalAlpha = a; c.fillStyle = s.gold ? '#ffe6a0' : '#e8e4ff';
+      const x = s.x * w, y = (s.y * h + t * s.r * 1.5) % h;
+      if (s.r > 1.7) { c.beginPath(); c.moveTo(x, y - s.r * 2.6); c.quadraticCurveTo(x, y, x + s.r * 2.6, y); c.quadraticCurveTo(x, y, x, y + s.r * 2.6); c.quadraticCurveTo(x, y, x - s.r * 2.6, y); c.quadraticCurveTo(x, y, x, y - s.r * 2.6); c.fill(); }
+      else c.fillRect(x - s.r / 2, y - s.r / 2, s.r, s.r);
+    }
+    c.globalAlpha = 1;
+    if (!k.shoot && t > k.next) k.shoot = { x: Math.random() * w * 0.8 + w * 0.2, y: Math.random() * h * 0.3, t: 0 };
+    if (k.shoot) {
+      const q = k.shoot; q.t += 1 / 60; const px = q.x - q.t * 520, py = q.y + q.t * 260, a = Math.max(0, 1 - q.t / 0.9);
+      const g = c.createLinearGradient(px, py, px + 110, py - 55); g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+      c.strokeStyle = g; c.lineWidth = 2; c.beginPath(); c.moveTo(px, py); c.lineTo(px + 110, py - 55); c.stroke();
+      if (q.t > 0.9) { k.shoot = null; k.next = t + 4 + Math.random() * 7; }
+    }
+  },
   viewSize() { return { w: this.w / this.zoom, h: this.h / this.zoom }; },
 
   // 画像を加算合成で描く（fx_ 素材は黒背景なので、黒が消えて光だけ残る）
@@ -91,10 +124,12 @@ const Render = {
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     c.fillStyle = R.stage.color; c.fillRect(0, 0, this.w, this.h);
     let sx = 0, sy = 0;
-    if (R.shake > 0 && Save.data.settings.shake) { sx = (Math.random() - 0.5) * R.shake; sy = (Math.random() - 0.5) * R.shake; }
+    // 揺れは毎フレームの乱数ではなく、なめらかな波の重ね合わせ（ビリビリせず「ドン」と揺れる）
+    if (R.shake > 0 && Save.data.settings.shake) { const q = performance.now() * 0.034; sx = R.shake * (Math.sin(q * 1.7) * 0.65 + Math.sin(q * 3.3) * 0.35); sy = R.shake * (Math.sin(q * 2.3 + 1) * 0.65 + Math.sin(q * 4.1) * 0.35); }
+    const zm = this.zoom * (1 + (Save.data.settings.shake ? R.zoomKick : 0));
     c.save();
     c.translate(this.w / 2 + sx, this.h / 2 + sy);
-    c.scale(this.zoom, this.zoom);
+    c.scale(zm, zm);
     c.translate(-p.x, -p.y);
     const v = this.viewSize();
     const L = p.x - v.w / 2 - 80, T = p.y - v.h / 2 - 80, Rr = p.x + v.w / 2 + 80, B = p.y + v.h / 2 + 80;
@@ -113,15 +148,33 @@ const Render = {
       this.drawEnemy(c, e, t);
     }
 
+    // 倒した敵の残像（白く光って、ふくらみながら消える）
+    for (const g of R.ghosts) {
+      const k = g.life / g.max; const img = g.hue ? Assets.hued(g.img, g.hue) : Assets.get(g.img);
+      const s = g.r * 2.5 * (1.5 - k * 0.5); const gx = g.x + g.vx * (1 - k) * g.max, gy = g.y + g.vy * (1 - k) * g.max;
+      c.save(); c.translate(gx, gy); c.scale(-g.face * (1 + (1 - k) * 0.25), 1 - (1 - k) * 0.35);
+      if (img) { c.globalAlpha = k * 0.9; c.drawImage(img, -s / 2, -s / 2, s, s); c.globalCompositeOperation = 'lighter'; c.globalAlpha = k; c.drawImage(img, -s / 2, -s / 2, s, s); }
+      else { c.globalAlpha = k; c.fillStyle = '#fff'; c.beginPath(); c.arc(0, 0, g.r * (1.4 - k * 0.4), 0, TAU); c.fill(); }
+      c.restore();
+    }
+
     // プレイヤーとサポート
     for (const w of R.weapons) if (w.type === 'aura') this.drawAura(c, w, R);
     if (R.sup) this.drawChar(c, R.support, R.sup.x, R.sup.y, 50, R.sup.x < p.x ? 1 : -1, 1, t);
     const blink = p.invul > 0 && Math.floor(t * 20) % 2 === 0;
     this.glow(c, p.x, p.y + 10, 46, 'rgba(255,230,160,1)', 0.18);
     c.strokeStyle = 'rgba(255,240,160,.75)'; c.lineWidth = 2; c.beginPath(); c.ellipse(p.x, p.y + 28, 22, 8, 0, 0, TAU); c.stroke();
-    if (!blink) this.drawChar(c, R.char, p.x, p.y, 70, p.face, 1, t, p.moving);
-    c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(p.x - 22, p.y + 34, 44, 6);
-    c.fillStyle = p.hp / p.maxHp < 0.3 ? '#ff4f4f' : '#57e389'; c.fillRect(p.x - 22, p.y + 34, 44 * Math.max(0, p.hp / p.maxHp), 6);
+    if (!blink && !p.dead) this.drawChar(c, R.char, p.x, p.y, 70, p.face, 1, t, p.moving);
+    if (!p.dead) {
+      // HPバー（減った分が少し遅れて追いかける）
+      const hr = Math.max(0, p.hp / p.maxHp); p.hpLag = p.hpLag === undefined || p.hpLag < hr ? hr : Math.max(hr, p.hpLag - 0.012);
+      const bx = p.x - 24, by = p.y + 34, bw = 48, bh = 7;
+      c.fillStyle = 'rgba(10,8,24,.8)'; this.rr(c, bx - 1.5, by - 1.5, bw + 3, bh + 3, 5); c.fill();
+      c.fillStyle = '#fff'; this.rr(c, bx, by, bw * p.hpLag, bh, 3.5); c.fill();
+      const hg = c.createLinearGradient(0, by, 0, by + bh);
+      if (hr < 0.3) { hg.addColorStop(0, '#ff8a8a'); hg.addColorStop(1, '#ff3d5a'); } else { hg.addColorStop(0, '#9dffb0'); hg.addColorStop(1, '#3fd67a'); }
+      c.fillStyle = hg; if (hr > 0.02) { this.rr(c, bx, by, bw * hr, bh, 3.5); c.fill(); }
+    }
 
     // 攻撃（加算合成で光らせる）
     for (const z of R.zones) this.drawZoneOver(c, z, R);
@@ -146,9 +199,9 @@ const Render = {
       for (const n of R.nums) {
         const k = n.life / 0.6; const pop = k > 0.8 ? 1 + (k - 0.8) * 2.5 : 1;
         c.globalAlpha = Math.min(1, n.life * 3);
-        c.font = `900 ${Math.round((n.crit ? 20 : n.weak ? 17 : 13) * pop)}px sans-serif`;
-        c.fillStyle = n.crit ? '#ff4f7b' : n.weak ? '#ffe14d' : '#fff';
-        const tx = fmtNum(n.v); c.strokeText(tx, n.x, n.y); c.fillText(tx, n.x, n.y);
+        c.font = `900 ${Math.round((n.crit ? 21 : n.weak ? 17 : 13) * pop)}px ${this.font}`;
+        c.fillStyle = n.color || (n.crit ? '#ff4f7b' : n.weak ? '#ffe14d' : '#fff');
+        const tx = n.txt || fmtNum(n.v); c.strokeText(tx, n.x, n.y); c.fillText(tx, n.x, n.y);
       }
       c.globalAlpha = 1;
     }
@@ -161,27 +214,43 @@ const Render = {
     }
     c.fillStyle = this._vig.g; c.fillRect(0, 0, this.w, this.h);
     if (p.hp / p.maxHp < 0.3) { c.fillStyle = `rgba(255,0,40,${0.12 + Math.sin(t * 6) * 0.06})`; c.fillRect(0, 0, this.w, this.h); }
+    if (R.hurtFlash > 0) {
+      if (!this._hurt || this._hurt.w !== this.w || this._hurt.h !== this.h) {
+        const g = c.createRadialGradient(this.w / 2, this.h / 2, Math.min(this.w, this.h) * 0.25, this.w / 2, this.h / 2, Math.max(this.w, this.h) * 0.7);
+        g.addColorStop(0, 'rgba(255,30,70,0)'); g.addColorStop(1, 'rgba(255,30,70,.75)'); this._hurt = { w: this.w, h: this.h, g };
+      }
+      c.globalAlpha = R.hurtFlash; c.fillStyle = this._hurt.g; c.fillRect(0, 0, this.w, this.h); c.globalAlpha = 1;
+    }
     if (R.flash && Save.data.settings.shake) { c.fillStyle = `rgba(${R.flash.c},${Math.max(0, R.flash.a) * 0.6})`; c.fillRect(0, 0, this.w, this.h); }
 
-    // ボスのHP
-    const boss = R.bossIds.find(b => !b.dead);
-    if (boss) {
-      const bw = Math.min(420, this.w - 40), bx = (this.w - bw) / 2;
-      c.fillStyle = 'rgba(0,0,0,.7)'; c.fillRect(bx - 2, 62, bw + 4, 16);
-      const g = c.createLinearGradient(bx, 0, bx + bw, 0); g.addColorStop(0, '#ff2f6d'); g.addColorStop(1, '#ffb347');
-      c.fillStyle = g; c.fillRect(bx, 64, bw * Math.max(0, boss.hp / boss.maxHp), 12);
-      c.fillStyle = '#fff'; c.font = 'bold 13px sans-serif'; c.textAlign = 'center'; c.fillText(boss.def.name, this.w / 2, 58);
-    }
+    // 画面の外にある宝箱・ボスの方向を、画面のふちに矢印で示す
+    const hw = this.w / 2, hh = this.h / 2, mg = 34;
+    const mark = (wx, wy, col, img) => {
+      const dx = (wx - p.x) * zm, dy = (wy - p.y) * zm;
+      if (Math.abs(dx) < hw - 10 && Math.abs(dy) < hh - 10) return;
+      const k = Math.min((hw - mg) / Math.abs(dx || 1), (hh - mg) / Math.abs(dy || 1));
+      const x = hw + dx * k, y = Math.min(this.h - mg - 60, Math.max(mg + 70, hh + dy * k)), a = Math.atan2(dy, dx);
+      const bob = 1 + Math.sin(t * 6) * 0.08;
+      c.save(); c.translate(x, y); c.scale(bob, bob);
+      c.fillStyle = 'rgba(13,11,30,.85)'; c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.arc(0, 0, 17, 0, TAU); c.fill(); c.stroke();
+      const im = Assets.get(img); if (im) c.drawImage(im, -12, -12, 24, 24);
+      c.rotate(a); c.fillStyle = col; c.beginPath(); c.moveTo(27, 0); c.lineTo(19, -6); c.lineTo(19, 6); c.closePath(); c.fill();
+      c.restore();
+    };
+    for (const o of R.drops) if (o.kind === 'chest') mark(o.x, o.y, '#ffd166', 'item_chest');
+    for (const b of R.bossIds) if (!b.dead) mark(b.x, b.y, '#ff4f7b', b.def.img);
     // スティック
-    if (Input.joy) {
+    if (Input.joy && !R.over) {
       const j = Input.joy; const r = this.cv.getBoundingClientRect();
       const ox = j.ox - r.left, oy = j.oy - r.top;
-      c.globalAlpha = 0.3; c.fillStyle = '#fff';
-      c.beginPath(); c.arc(ox, oy, 50, 0, TAU); c.fill();
-      c.globalAlpha = 0.6;
       const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy), m = Math.min(d, 50);
-      c.beginPath(); c.arc(ox + (d ? dx / d * m : 0), oy + (d ? dy / d * m : 0), 22, 0, TAU); c.fill();
-      c.globalAlpha = 1;
+      c.save();
+      c.fillStyle = 'rgba(255,255,255,.07)'; c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 2;
+      c.beginPath(); c.arc(ox, oy, 52, 0, TAU); c.fill(); c.stroke();
+      const kx = ox + (d ? dx / d * m : 0), ky = oy + (d ? dy / d * m : 0);
+      const g = c.createRadialGradient(kx - 6, ky - 6, 2, kx, ky, 24); g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(255,170,215,.75)');
+      c.fillStyle = g; c.shadowColor = 'rgba(255,126,185,.8)'; c.shadowBlur = 14; c.beginPath(); c.arc(kx, ky, 23, 0, TAU); c.fill();
+      c.restore();
     }
     if (R.cutin) this.drawCutin(c, R.cutin);
   },
@@ -219,7 +288,8 @@ const Render = {
     c.fillStyle = 'rgba(0,0,0,.28)'; c.beginPath(); c.ellipse(e.x, e.y + e.r * 0.9, e.r * 0.8, e.r * 0.25, 0, 0, TAU); c.fill();
     if (e.elite) this.glow(c, e.x, e.y, e.r * 1.8, e.boss ? 'rgba(255,40,90,1)' : 'rgba(255,210,60,1)', 0.35 + Math.sin(t * 5) * 0.1);
     c.save(); c.translate(e.x, e.y);
-    c.scale((e.face || 1) * -1 * (1 + wob), 1 - wob);
+    const pu = e.flash > 0 ? 1 + e.flash * 1.8 : 1; // 当たった瞬間に少しふくらむ
+    c.scale((e.face || 1) * -1 * (1 + wob) * pu, (1 - wob) * pu);
     if (img) {
       c.drawImage(img, -s / 2, -s / 2, s, s);
       if (e.flash > 0) { c.globalCompositeOperation = 'lighter'; c.globalAlpha = 0.7; c.drawImage(img, -s / 2, -s / 2, s, s); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over'; }
@@ -454,7 +524,7 @@ const Render = {
       c.save(); c.beginPath(); c.rect(0, y + 4, this.w, h - 8); c.clip();
       const s = h * 1.8; c.drawImage(img, x - s * 0.2, y - h * 0.15, s, s); c.restore();
     }
-    c.fillStyle = '#fff'; c.font = `bold ${Math.round(h * 0.18)}px sans-serif`; c.textAlign = 'right';
+    c.fillStyle = '#fff'; c.font = `700 ${Math.round(Math.min(h * 0.2, this.w * 0.085))}px "Kaisei Decol", ${this.font}`; c.textAlign = 'right'; c.shadowColor = ci.char.color; c.shadowBlur = 18;
     c.fillText(ci.char.specialName, this.w - 24 - slide * this.w * 0.4, y + h * 0.6);
     c.restore();
   },

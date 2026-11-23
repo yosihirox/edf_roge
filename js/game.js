@@ -64,6 +64,7 @@ const Game = {
       spawnAcc: 0, nextElite: 150, nextRush: 200, bossSpawned: false, bossIds: [], bossQueue: null,
       levelQueue: 0, pendingChest: 0, earnedEquip: [], hitstop: 0, shake: 0, cutin: null,
       floor: 1, cleared: false, killsBy: {}, rainT: 0, spinBeam: null, parts: [], flash: null,
+      ghosts: [], hurtFlash: 0, zoomKick: 0, slowmo: 0, stopCd: 0, resumeT: 0, xpPulse: false, intro: 1.2,
     };
     if (R.support) R.sup = { x: -30, y: 20, r: 14 };
     this.recalc();
@@ -160,7 +161,6 @@ const Game = {
   // ---------- メインループ ----------
   update(dt) {
     const R = this.run; if (!R || R.over) return;
-    if (R.hitstop > 0) { R.hitstop -= dt; return; }
     if (R.cutin) { R.cutin.t -= dt; if (R.cutin.t <= 0) R.cutin = null; dt *= 0.15; }
     R.t += dt;
     Save.data.stats.playTime += dt;
@@ -200,13 +200,11 @@ const Game = {
     for (let i = 0; i < R.enemies.length; i++) { const e = R.enemies[i]; if (!e.dead) R.enemies[j++] = e; }
     R.enemies.length = j;
 
-    if (R.shake > 0) R.shake = Math.max(0, R.shake - dt * 30);
-
     // クリア判定
     const st = R.stage;
     if (st.time && !st.special && R.t >= st.time) this.finish(true);
     if (st.special === 'vault' && R.t >= st.time) this.finish(true);
-    if (st.special === 'abyss') { const f = 1 + Math.floor(R.t / 90); if (f > R.floor) { R.floor = f; UI.toast(`深淵 ${f}階`); this.spawnElite(); } }
+    if (st.special === 'abyss') { const f = 1 + Math.floor(R.t / 90); if (f > R.floor) { R.floor = f; UI.banner('info', `深淵 ${f}階`, '敵がさらに強くなる'); this.spawnElite(true); } }
 
     if (R.levelQueue > 0 && !UI.modalOpen()) { R.levelQueue--; UI.showLevelUp(); }
     else if (R.pendingChest > 0 && !UI.modalOpen()) { R.pendingChest--; this.openChest(); }
@@ -274,12 +272,30 @@ const Game = {
     R.enemies.push(e);
     return e;
   },
-  spawnElite() {
+  // ---------- 手触り（実時間で進むもの） ----------
+  // ヒットストップ：一瞬だけ時間を止めて、当たった重さを出す。細かい連発は間引く
+  stop(sec) {
+    const R = this.run;
+    if (sec < 0.1 && R.stopCd > 0) return;
+    R.hitstop = Math.max(R.hitstop, sec); R.stopCd = 0.22;
+  },
+  tickReal(dt) {
+    const R = this.run;
+    if (R.shake > 0) R.shake = Math.max(0, R.shake - dt * (8 + R.shake * 2.2));
+    if (R.hurtFlash > 0) R.hurtFlash = Math.max(0, R.hurtFlash - dt * 2.4);
+    if (R.zoomKick > 0) R.zoomKick = Math.max(0, R.zoomKick - dt * 0.25 - R.zoomKick * dt * 6);
+    if (R.stopCd > 0) R.stopCd -= dt;
+    if (R.intro > 0) R.intro -= dt;
+    const G = R.ghosts;
+    for (let i = G.length - 1; i >= 0; i--) { G[i].life -= dt; if (G[i].life <= 0) { G[i] = G[G.length - 1]; G.pop(); } }
+  },
+
+  spawnElite(quiet) {
     const R = this.run;
     const type = pick(this.currentPool().filter(t => t !== 'goldslime')) || 'slime';
     const e = this.spawnEnemy(type, null, 25);
     e.elite = true; e.r *= 1.8; e.spd *= 0.85; e.xp *= 20; e.dmg *= 1.5; e.kbRes = 0.9;
-    UI.toast('強敵が現れた！');
+    if (!quiet) { UI.banner('elite', '強敵出現', `${def0(type).name}・倒すと宝箱`); Sound.sfx('alert'); }
   },
   spawnBoss(type, scale = 1) {
     const R = this.run;
@@ -294,9 +310,9 @@ const Game = {
       dead: false, elite: true, boss: true, kbRes: 1, hue: def.hue || 0, coin: 0, life: 0,
     };
     R.enemies.push(e); R.bossIds.push(e);
-    UI.toast(`${def.name} が現れた！`, 3);
-    Sound.playBgm(R.stage.bgm, true);
-    R.shake = 12;
+    UI.banner('boss', def.name, 'WARNING');
+    Sound.sfx('warn'); Sound.playBgm(R.stage.bgm, true);
+    R.shake = 12; R.flash = { a: 0.35, c: '255,40,80' };
     return e;
   },
   spawnRush() {
@@ -307,7 +323,7 @@ const Game = {
       // 包囲：輪になって迫ってくる
       const rad = 520;
       for (let i = 0; i < n; i++) { const a = i / n * TAU; this.spawnEnemy(type, { x: p.x + Math.cos(a) * rad, y: p.y + Math.sin(a) * rad }); }
-      UI.toast('包囲ラッシュ！');
+      UI.banner('rush', '包囲ラッシュ', '四方から押し寄せる'); Sound.sfx('alert');
     } else {
       // 横一列の突撃
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -315,7 +331,7 @@ const Game = {
         const e = this.spawnEnemy(type, { x: p.x - dir * 600 - (i % 3) * 30, y: p.y - 420 + (i / n) * 840 });
         e.ai = 'charge'; e.vx = dir * (140 + R.t / 20); e.life = 9;
       }
-      UI.toast('突撃ラッシュ！');
+      UI.banner('rush', '突撃ラッシュ', dir > 0 ? '左から来る' : '右から来る'); Sound.sfx('alert');
     }
   },
 
@@ -699,6 +715,7 @@ const Game = {
       R.nums.push({ x: e.x + rand(-8, 8), y: e.y - e.r, v: dmg, life: 0.6, weak, crit });
     if (Math.random() < 0.35) this.spark(e.x, e.y, D.ELEM[elem] ? D.ELEM[elem].color : '#fff', 2, 140, 2, 0.25);
     if (weak || crit || dmg > e.maxHp * 0.3) R.fx.push({ kind: 'hit', x: e.x, y: e.y, life: 0.15, max: 0.15, s: e.r * 2.2 });
+    if (crit) this.stop(0.03);
     Sound.sfx('hit');
     if (e.hp <= 0) this.kill(e);
   },
@@ -706,6 +723,12 @@ const Game = {
     const R = this.run; if (e.dead) return;
     e.dead = true;
     R.kills++;
+    Sound.sfx('kill');
+    // 倒れた瞬間の「はじけ飛ぶ」残像
+    if (!Save.data.settings.light && R.ghosts.length < 60) {
+      const d = Math.hypot(e.kx, e.ky) || 1;
+      R.ghosts.push({ img: e.def.img, hue: e.hue, x: e.x, y: e.y, r: e.r, face: e.face || 1, vx: e.kx / d * 90, vy: e.ky / d * 90, life: e.elite ? 0.4 : 0.2, max: e.elite ? 0.4 : 0.2, color: e.def.color });
+    }
     R.killsBy[e.type] = (R.killsBy[e.type] || 0) + 1;
     R.special = Math.min(100, R.special + (e.boss ? 30 : e.elite ? 10 : 0.45));
     // 経験値の宝石
@@ -722,7 +745,8 @@ const Game = {
       R.drops.push({ kind: 'chest', x: e.x, y: e.y });
       if (Math.random() < (e.boss ? 1 : 0.35)) R.earnedEquip.push(makeEquip(Math.min(5, rollRarity(luck) + (e.boss ? 1 : 0) + (R.hard ? 1 : 0))));
       R.shake = Math.max(R.shake, e.boss ? 14 : 6);
-      if (e.boss) { R.hitstop = 0.15; R.gold += 50 * coinMul; Sound.playBgm(R.stage.bgm); }
+      if (e.boss) { R.hitstop = 0.28; R.slowmo = 0.9; R.zoomKick = 0.1; R.gold += 50 * coinMul; Sound.sfx('bigboom'); Sound.playBgm(R.stage.bgm); UI.banner('info', `${e.def.name} 撃破！`, 'コイン +' + 50 * coinMul); }
+      else { this.stop(0.09); Sound.sfx('boom'); }
     }
     if (e.ai === 'split' && !e.elite) for (let i = 0; i < 3; i++) { const s = this.spawnEnemy('slime', { x: e.x + rand(-15, 15), y: e.y + rand(-15, 15) }); s.hp *= 2; }
     this.spark(e.x, e.y, e.def.color, e.elite ? 30 : 5, e.elite ? 320 : 160, e.elite ? 5 : 3, 0.45);
@@ -819,8 +843,9 @@ const Game = {
     if (p.invul > 0 || R.over) return;
     dmg = Math.max(1, dmg - R.stats.armor);
     p.hp -= dmg; p.invul = 0.5;
-    R.shake = Math.max(R.shake, 5);
-    Sound.sfx('hurt');
+    R.shake = Math.max(R.shake, 7); R.hurtFlash = 1; this.stop(0.06);
+    this.spark(p.x, p.y, '#ff5d6c', 10, 240, 3, 0.4);
+    Sound.sfx('hurt'); UI.buzz(30);
     for (const s in Save.data.equip) {
       const it = Save.data.equip[s];
       if (it && it.special === 'nova') {
@@ -833,7 +858,7 @@ const Game = {
         p.revives--; p.hp = p.maxHp * 0.5; p.invul = 2.5;
         this.boom(p.x, p.y, 300, '#fff3a8', 'fx_burst', 2); R.flash = { a: 0.6, c: '255,250,220' };
         Grid.query(p.x, p.y, 320, e => { if (!e.boss) { const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy) || 1; e.kx += dx / d * 900; e.ky += dy / d * 900; } });
-        UI.toast('復活！');
+        UI.banner('info', '復活！', `残り ${p.revives} 回`); R.hitstop = 0.2; Sound.sfx('evolve');
       } else this.finish(false);
     }
   },
@@ -850,7 +875,7 @@ const Game = {
         g.pull = true;
         const d = Math.sqrt(d2) || 1; const sp = 420 + (g.big ? 200 : 0);
         g.x += (p.x - g.x) / d * sp * dt; g.y += (p.y - g.y) / d * sp * dt;
-        if (d < p.r + 6) { this.gainXp(g.v); G.splice(i, 1); Sound.sfx('gem'); }
+        if (d < p.r + 6) { this.gainXp(g.v); G.splice(i, 1); Sound.sfx('gem'); R.xpPulse = true; }
       }
     }
     const Dr = R.drops;
@@ -862,20 +887,24 @@ const Game = {
       }
       if (d2 < (p.r + 12) ** 2) {
         Dr.splice(i, 1);
-        if (o.kind === 'coin') { R.gold += o.v; Sound.sfx('coin'); }
-        else if (o.kind === 'heal') { if (R.challenge !== 'noheal') p.hp = Math.min(p.maxHp, p.hp + 30 + p.maxHp * 0.2); Sound.sfx('gem'); }
-        else if (o.kind === 'magnet') { R.gems.forEach(g => g.pull = true); Sound.sfx('level'); }
+        if (o.kind === 'coin') { R.gold += o.v; Sound.sfx('coin'); this.popText(p.x, p.y - 30, '+' + o.v, '#ffd166'); }
+        else if (o.kind === 'heal') {
+          if (R.challenge !== 'noheal') { const h = 30 + p.maxHp * 0.2; p.hp = Math.min(p.maxHp, p.hp + h); this.popText(p.x, p.y - 34, '+' + Math.round(h), '#7dff9c'); }
+          Sound.sfx('heal'); R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 60, life: 0.4, max: 0.4, color: '#7dff9c' }); this.spark(p.x, p.y, '#7dff9c', 14, 200, 3, 0.6);
+        }
+        else if (o.kind === 'magnet') { R.gems.forEach(g => g.pull = true); Sound.sfx('ready'); R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 420, life: 0.5, max: 0.5, color: '#7ee0ff' }); UI.banner('mini', 'ぜんぶ回収！'); }
         else if (o.kind === 'chest') { R.pendingChest++; }
       }
     }
   },
+  popText(x, y, txt, color) { const R = this.run; if (R.nums.length < 120) R.nums.push({ x, y, v: 0, txt, color, life: 0.8, crit: false, weak: true }); },
   gainXp(v) {
     const R = this.run; const p = R.player;
     p.xp += v * (1 + R.stats.growth);
     let need = D.xpNeed(p.level);
     while (p.xp >= need) {
       p.xp -= need; p.level++; R.levelQueue++; need = D.xpNeed(p.level);
-      R.fx.push({ kind: 'levelup', x: p.x, y: p.y, life: 0.9, max: 0.9 }); this.spark(p.x, p.y, '#fff3a8', 40, 380, 4, 0.8); R.flash = { a: 0.35, c: '255,255,230' };
+      R.fx.push({ kind: 'levelup', x: p.x, y: p.y, life: 0.9, max: 0.9 }); this.spark(p.x, p.y, '#fff3a8', 40, 380, 4, 0.8); R.flash = { a: 0.35, c: '255,255,230' }; R.zoomKick = 0.06;
       Sound.sfx('level');
       if (R.sup) R.weapons.filter(w => w.owner === 's').forEach(w => this.calcWeapon(w));
     }
@@ -896,7 +925,7 @@ const Game = {
     R.special = 0;
     const p = R.player; const lv = p.level; const m = 1 + R.stats.might;
     R.cutin = { t: 1.0, char: R.char };
-    R.shake = 14; Sound.sfx('special'); R.flash = { a: 0.8, c: '255,255,255' }; R.fx.push({ kind: 'levelup', x: p.x, y: p.y, life: 1.2, max: 1.2, big: true });
+    R.shake = 14; R.zoomKick = 0.1; Sound.sfx('special'); UI.buzz(60); R.flash = { a: 0.8, c: '255,255,255' }; R.fx.push({ kind: 'levelup', x: p.x, y: p.y, life: 1.2, max: 1.2, big: true });
     const onScreen = () => this.randomOnScreen(9999);
     switch (R.char.special) {
       case 'starburst': {
@@ -987,7 +1016,7 @@ const Game = {
   },
   openChest() {
     const R = this.run; const luck = R.stats.luck;
-    Sound.sfx('chest'); R.flash = { a: 0.5, c: '255,220,120' }; this.spark(R.player.x, R.player.y, '#ffd84a', 50, 420, 4, 1);
+    R.flash = { a: 0.5, c: '255,220,120' }; this.spark(R.player.x, R.player.y, '#ffd84a', 50, 420, 4, 1);
     const evs = this.availableEvolutions();
     const results = [];
     let coins = Math.floor(rand(10, 30) * (R.stage.coinMul || 1));
@@ -1004,17 +1033,16 @@ const Game = {
         Save.data.stats.recipes[e.evo.id] = true;
         results.push({ text: `進化！ ${e.evo.name}`, evo: true });
       }
-      Sound.sfx('evolve');
     } else {
       const r = Math.random();
       const n = r < 0.05 * (1 + luck) ? 5 : r < 0.3 * (1 + luck * 0.5) ? 3 : 1;
       for (let i = 0; i < n; i++) {
         const c = this.buildChoices(1).filter(x => x.kind !== 'wnew' && x.kind !== 'pnew')[0] || { kind: 'gold' };
         this.applyChoice(c);
-        results.push({ text: UI.choiceLabel(c) });
+        results.push({ text: UI.choiceLabel(c), icon: UI.choiceIcon(c) });
       }
     }
-    results.push({ text: `コイン +${coins}` });
+    results.push({ text: `コイン +${coins}`, icon: ic('coin') });
     UI.showChest(results);
   },
 
@@ -1023,6 +1051,9 @@ const Game = {
     const R = this.run; if (R.over) return;
     R.over = true; R.cleared = win;
     Sound.stopBgm(); Sound.sfx(win ? 'clear' : 'over');
+    const pl = R.player;
+    if (!win) { pl.dead = true; this.boom(pl.x, pl.y, 120, '#ff7eb9', 'fx_burst', 1.6); this.spark(pl.x, pl.y, '#fff', 40, 420, 4, 1.2); R.shake = 16; R.flash = { a: 0.5, c: '255,120,150' }; UI.buzz(200); }
+    else { R.flash = { a: 0.7, c: '255,250,220' }; R.zoomKick = 0.12; this.spark(pl.x, pl.y, '#ffd166', 60, 520, 5, 1.4); R.fx.push({ kind: 'levelup', x: pl.x, y: pl.y, life: 1.4, max: 1.4, big: true }); }
     Save.clearRun();
     const sv = Save.data; const st = sv.stats; const s = R.stats;
     let mul = (1 + s.greed) * (1 + R.curse * 0.2) * (R.hard ? 2 : 1);
@@ -1045,12 +1076,15 @@ const Game = {
     // ベスト記録
     const bk = `${sid}${R.hard ? '_hard' : ''}_${R.char.id}`;
     const b = st.best[bk] || { time: 0, kills: 0, level: 0, clears: 0, fastest: 0 };
+    const first = !st.best[bk];
+    const rec = { time: !first && Math.floor(R.t) > b.time, kills: !first && R.kills > b.kills, level: !first && R.player.level > b.level, fastest: win && b.fastest > 0 && R.t < b.fastest };
     b.time = Math.max(b.time, Math.floor(R.t)); b.kills = Math.max(b.kills, R.kills); b.level = Math.max(b.level, R.player.level);
     if (win) { b.clears++; if (!b.fastest || R.t < b.fastest) b.fastest = Math.floor(R.t); }
     st.best[bk] = b;
     // キャラ経験値
     const cs = sv.chars[R.char.id] || (sv.chars[R.char.id] = { lv: 1, xp: 0, skin: 'default', skins: ['default'] });
     const cxp = Math.floor(R.kills * 0.5 + R.t * 2 + (win ? 300 : 0));
+    const before = { lv: cs.lv, ratio: cs.lv < D.CHAR_LV_MAX ? cs.xp / D.charXpNeed(cs.lv) : 1 };
     cs.xp += cxp;
     let lvUp = 0;
     while (cs.lv < D.CHAR_LV_MAX && cs.xp >= D.charXpNeed(cs.lv)) { cs.xp -= D.charXpNeed(cs.lv); cs.lv++; lvUp++; }
@@ -1059,9 +1093,13 @@ const Game = {
     for (const it of R.earnedEquip) { sv.inventory.push(it); st.bestRarity = Math.max(st.bestRarity, it.rarity); }
     const newAch = checkAchievements();
     Save.write();
-    setTimeout(() => UI.showResult({ win, coins, cxp, lvUp, charLv: cs.lv, newAch, equips: R.earnedEquip }), 700);
+    const after = { lv: cs.lv, ratio: cs.lv < D.CHAR_LV_MAX ? cs.xp / D.charXpNeed(cs.lv) : 1 };
+    UI.endMoment(win);
+    setTimeout(() => { if (this.run === R) UI.showResult({ win, coins, cxp, lvUp, charLv: cs.lv, newAch, equips: R.earnedEquip, before, after, rec }); }, win ? 1900 : 1500);
   },
 };
+
+const def0 = t => D.ENEMIES[t] || D.BOSSES[t];
 
 // 実績チェック（報酬を付与して、新しく達成したものを返す）
 function checkAchievements() {

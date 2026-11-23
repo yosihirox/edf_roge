@@ -7,10 +7,13 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="星継ぎ">
-<meta name="theme-color" content="#14101f">
+<meta name="theme-color" content="#0d0b1e">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="assets/icon-192.png">
 <title>星継ぎのサバイバー</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kaisei+Decol:wght@700&family=Zen+Maru+Gothic:wght@500;700;900&display=swap">
 <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -18,23 +21,33 @@
   <div id="stage">
     <canvas id="game"></canvas>
     <div id="hud" class="hidden">
-      <div id="xpbar"><div id="xpfill"></div><span id="lvtext">Lv 1</span></div>
-      <div id="hudrow">
-        <div id="timer">0:00</div>
-        <div class="hudstat">💀 <b id="kills">0</b></div>
-        <div class="hudstat">🪙 <b id="gold">0</b></div>
-        <div id="floorText"></div>
-        <div class="spacer"></div>
-        <button id="speedBtn" class="hudbtn">x1</button>
-        <button id="pauseBtn" class="hudbtn">Ⅱ</button>
+      <div id="xpbar"><div id="xpfill"></div><div id="xpshine"></div><span id="lvtext">Lv 1</span></div>
+      <div id="hudtop">
+        <div class="hudleft">
+          <div class="chip" id="killsChip"><span class="ic" data-ic="skull"></span><b id="kills">0</b></div>
+          <div class="chip gold" id="goldChip"><span class="ic" data-ic="coin"></span><b id="gold">0</b></div>
+        </div>
+        <div class="hudmid"><div id="timer">0:00</div><div id="floorText"></div></div>
+        <div class="hudright">
+          <button id="speedBtn" class="hudbtn" aria-label="倍速">x1</button>
+          <button id="pauseBtn" class="hudbtn" aria-label="一時停止"><span class="ic" data-ic="pause"></span></button>
+        </div>
       </div>
+      <div id="bossbar" class="hidden"><div id="bossname"></div><div class="bbar"><div id="bosslag"></div><div id="bossfill"></div></div></div>
       <div id="wslots"></div>
-      <button id="specialBtn"><span>必殺</span><div id="specialFill"></div></button>
+      <button id="specialBtn" aria-label="必殺技"><div id="specialRing"></div><div id="specialFace"></div><span id="specialLabel">必殺</span></button>
     </div>
   </div>
   <div id="screen"></div>
   <div id="modal" class="hidden"></div>
+  <div id="banner"></div>
   <div id="toast"></div>
+  <div id="fade"></div>
+  <div id="boot">
+    <div class="bootlogo"><span>星継ぎの</span>サバイバー</div>
+    <div class="bootbar"><div id="bootfill"></div></div>
+    <button id="bootStart" class="hidden">タップしてスタート</button>
+  </div>
 </div>
 <script src="assets/manifest.js"></script>
 <script src="js/data.js"></script>
@@ -42,6 +55,7 @@
 <script src="js/assets.js"></script>
 <script src="js/game.js"></script>
 <script src="js/render.js"></script>
+<script src="js/icons.js"></script>
 <script src="js/ui.js"></script>
 <script src="js/main.js"></script>
 </body>
