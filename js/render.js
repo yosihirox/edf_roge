@@ -90,7 +90,8 @@ const Render = {
     // プレイヤーとサポート
     if (R.sup) this.drawChar(c, R.support, R.sup.x, R.sup.y, 46, R.sup.x < p.x ? 1 : -1, 1, R.t);
     const blink = p.invul > 0 && Math.floor(R.t * 20) % 2 === 0;
-    if (!blink) this.drawChar(c, R.char, p.x, p.y, 60, p.face, 1, R.t, p.moving);
+    c.strokeStyle = 'rgba(255,240,160,.7)'; c.lineWidth = 2; c.beginPath(); c.ellipse(p.x, p.y + 26, 22, 8, 0, 0, TAU); c.stroke();
+    if (!blink) this.drawChar(c, R.char, p.x, p.y, 68, p.face, 1, R.t, p.moving);
     // HPバー
     c.fillStyle = 'rgba(0,0,0,.6)'; c.fillRect(p.x - 22, p.y + 26, 44, 6);
     c.fillStyle = p.hp / p.maxHp < 0.3 ? '#ff4f4f' : '#57e389'; c.fillRect(p.x - 22, p.y + 26, 44 * Math.max(0, p.hp / p.maxHp), 6);
@@ -154,6 +155,8 @@ const Render = {
         c.save(); c.translate(ix * S + (fx < 0 ? S : 0), iy * S + (fy < 0 ? S : 0)); c.scale(fx, fy);
         c.drawImage(img, 0, 0, S, S); c.restore();
       }
+      const dim = { station: 0.5, snow: 0.12, forest: 0.12, desert: 0.08, ruins: 0.15 }[R.stage.tile.replace('tile_', '')] || 0;
+      if (dim) { c.fillStyle = `rgba(10,6,20,${dim})`; c.fillRect(p.x - v.w, p.y - v.h, v.w * 2, v.h * 2); }
       if (R.stage.special === 'abyss' || R.stage.special === 'throne') { c.fillStyle = 'rgba(20,0,40,.55)'; c.fillRect(p.x - v.w, p.y - v.h, v.w * 2, v.h * 2); }
     } else {
       // 画像が無い時は模様で
