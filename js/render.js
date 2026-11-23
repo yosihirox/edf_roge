@@ -279,11 +279,11 @@ const Render = {
     let ok = false;
     switch (b.kind) {
       case 'homing': ok = this.addImg(c, 'fx_star', b.x, b.y, b.r * 4.5 * (evo ? 1.4 : 1), b.r * 4.5 * (evo ? 1.4 : 1), t * 8); break;
-      case 'arrow': ok = this.addImg(c, 'fx_arrow', b.x, b.y, b.r * 9, b.r * 4, a); break;
-      case 'shard': ok = this.addImg(c, 'fx_shard', b.x, b.y, b.r * 5, b.r * 3, a); break;
+      case 'arrow': ok = this.addImg(c, 'fx_arrow', b.x, b.y, b.r * 8, b.r * 8, a + Math.PI / 4); break;
+      case 'shard': ok = this.addImg(c, 'fx_shard', b.x, b.y, b.r * 5, b.r * 5, a + Math.PI / 2); break;
       case 'boomerang': ok = this.addImg(c, 'fx_moon', b.x, b.y, b.r * 3.2, b.r * 3.2, b.rot); break;
       case 'lob': ok = this.addImg(c, 'fx_fireball', b.x, b.y, 34, 34, t * 10); break;
-      case 'bolt': ok = this.addImg(c, b.w.evo && b.w.evo.startsWith('fus_') ? 'fx_beam' : 'fx_thunder', b.x, b.y, b.r * 5, b.r * 4, a); break;
+      case 'bolt': ok = this.addImg(c, 'fx_thunder', b.x, b.y, b.r * 5, b.r * 5, a); break;
     }
     if (ok) { this.glow(c, b.x, b.y, b.r * 2.5, col, 0.25); return; }
     switch (b.kind) {
@@ -360,19 +360,20 @@ const Render = {
         const o = z.owner; const p = z.w.p; const a = Math.min(1, k * 3);
         c.save(); c.translate(o.x, o.y); c.rotate(z.ang);
         const W = p.width * (1 + Math.sin(t * 50) * 0.1);
-        if (Assets.get('fx_beam')) { c.globalCompositeOperation = 'lighter'; c.globalAlpha = a; c.drawImage(Assets.get('fx_beam'), 0, -W * 3, p.length, W * 6); }
         c.globalCompositeOperation = 'lighter'; c.globalAlpha = a * 0.8;
         c.fillStyle = z.w.evo ? 'rgba(120,240,255,.5)' : 'rgba(120,220,255,.4)'; c.fillRect(0, -W * 1.4, p.length, W * 2.8);
         c.fillStyle = '#fff'; c.fillRect(0, -W * 0.4, p.length, W * 0.8);
         c.restore();
         this.glow(c, o.x, o.y, W * 4, 'rgba(140,230,255,1)', a * 0.6);
+        this.addImg(c, 'fx_beam', o.x + Math.cos(z.ang) * 10, o.y + Math.sin(z.ang) * 10, W * 9, W * 9, t * 3, a);
+        this.addImg(c, 'fx_hit', o.x + Math.cos(z.ang) * p.length, o.y + Math.sin(z.ang) * p.length, W * 6, W * 6, t * 9, a * 0.8);
         break;
       }
       case 'spinbeam': {
         const o = R.player; c.save(); c.translate(o.x, o.y); c.rotate(z.ang); c.globalCompositeOperation = 'lighter';
-        if (Assets.get('fx_beam')) c.drawImage(Assets.get('fx_beam'), 0, -110, 650, 220);
         c.fillStyle = 'rgba(100,230,255,.5)'; c.fillRect(0, -50, 650, 100); c.fillStyle = '#fff'; c.fillRect(0, -16, 650, 32); c.restore();
         this.glow(c, o.x, o.y, 120, 'rgba(140,230,255,1)', 0.7);
+        this.addImg(c, 'fx_beam', o.x, o.y, 260, 260, t * 4, 1);
         break;
       }
       case 'tornado': {
@@ -408,11 +409,16 @@ const Render = {
       case 'spr': this.addImg(c, f.img, f.x, f.y, f.s * (f.grow ? 1.25 - k * 0.5 : 1), f.s * (f.grow ? 1.25 - k * 0.5 : 1), f.rot, Math.min(1, k * 2)); break;
       case 'bolt': {
         const r = f.r || 40;
-        if (!this.addImg(c, 'fx_lightning', f.x, f.y - 200, 120, 420, 0, Math.min(1, k * 2))) {
-          c.strokeStyle = f.color; c.lineWidth = 4; c.globalAlpha = k; c.beginPath(); let x = f.x, y = f.y - 400; c.moveTo(x, y);
-          while (y < f.y) { y += 40; x = f.x + (Math.random() - 0.5) * 30; c.lineTo(x, Math.min(y, f.y)); } c.stroke(); c.globalAlpha = 1;
+        c.save(); c.globalCompositeOperation = 'lighter'; c.globalAlpha = Math.min(1, k * 2);
+        for (const [lw, col] of [[10, 'rgba(120,170,255,.5)'], [4, f.color], [1.5, '#fff']]) {
+          c.strokeStyle = col; c.lineWidth = lw; c.beginPath(); let x = f.x, y = f.y - 420; c.moveTo(x, y);
+          let seed = Math.floor(f.x * 7 + f.y * 3);
+          while (y < f.y) { y += 35; seed = (seed * 9301 + 49297) % 233280; x = f.x + (seed / 233280 - 0.5) * 40; c.lineTo(x, Math.min(y, f.y)); }
+          c.stroke();
         }
-        this.addImg(c, 'fx_thunder', f.x, f.y, r * 2.6, r * 2.6, Math.random() * TAU, k);
+        c.restore();
+        this.addImg(c, 'fx_lightning', f.x, f.y, r * 3, r * 3, Math.random() * TAU, k);
+        this.addImg(c, 'fx_thunder', f.x, f.y, r * 2.4, r * 2.4, Math.random() * TAU, k);
         this.glow(c, f.x, f.y, r * 2, 'rgba(255,240,120,1)', k * 0.6);
         break;
       }
@@ -429,7 +435,7 @@ const Render = {
         break;
       }
       case 'star': this.addImg(c, 'fx_star', f.x, f.y - (1 - k) * 40, 50, 50, k * 6, k) || this.star(c, f.x, f.y - (1 - k) * 30, 16, '#fff3a8', k * 4); break;
-      case 'arrowfx': this.addImg(c, 'fx_arrow', f.x + 20 * k, f.y - 60 * k, 60, 24, Math.PI * 0.6, k); break;
+      case 'arrowfx': this.addImg(c, 'fx_arrow', f.x + 20 * k, f.y - 60 * k, 50, 50, Math.PI * 0.6 + Math.PI / 4, k); break;
     }
   },
 
