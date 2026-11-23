@@ -1,893 +1,1060 @@
-// =============================================================
-//  EDF ローグライト・ディフェンス  ゲーム本体
-// =============================================================
-const DIFFICULTIES = [
-  { key: 'easy',    name: 'EASY',    hp: 0.7, dmg: 0.7, reward: 1.1 },
-  { key: 'normal',  name: 'NORMAL',  hp: 1.0, dmg: 1.0, reward: 1.0 },
-  { key: 'hard',    name: 'HARD',    hp: 1.5, dmg: 1.3, reward: 0.95 },
-  { key: 'inferno', name: 'INFERNO', hp: 2.3, dmg: 1.8, reward: 0.9 },
-];
+// ゲーム本編（1回のプレイ＝ラン）のロジック
+'use strict';
 
-const SAVE_KEY = 'edf_roguelite_save_v1';
-function loadSave() {
-  try { return Object.assign({ armor: 0, best: {}, clears: {} }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-  catch (e) { return { armor: 0, best: {}, clears: {} }; }
-}
-function writeSave(s) { try { localStorage.setItem(SAVE_KEY, JSON.stringify(s)); } catch (e) {} }
-
+const TAU = Math.PI * 2;
 const rand = (a, b) => a + Math.random() * (b - a);
-const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
-function distToSegment(p, a, b) {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const l2 = dx * dx + dy * dy || 1;
-  const t = clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / l2, 0, 1);
-  return { d: Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)), t };
-}
-
-const RADIO = {
-  start: ['本部より各隊へ。巨大生物の接近を確認。迎撃せよ！', '作戦開始。EDF！EDF！', '敵の侵攻が始まった。ベースを守り抜け！'],
-  boss: ['本部より緊急連絡！巨大な反応を確認！', 'なんだあれは……！？総員、攻撃を集中しろ！'],
-  clear: ['ウェーブ撃退。よくやった。', '敵の反応が消えた。次に備えろ。', '一時的に敵の攻勢が止んだ。補給を急げ。'],
-  levelup: ['本部より新装備が届いた！', '補給物資が到着。装備を選択せよ。'],
-  down: ['隊員が倒れた！救護班を急がせろ！', 'やられた！誰か援護を！'],
-};
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
+const dist2 = (ax, ay, bx, by) => { const dx = ax - bx, dy = ay - by; return dx * dx + dy * dy; };
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 
-class Game {
-  constructor(canvas) {
-    this.canvas = canvas;
-    this.ctx = canvas.getContext('2d');
-    this.save = loadSave();
-    this.state = 'title';
-    this.speed = 1;
-    this.paused = false;
-    this.time = 0;
-    this.placing = null;
-    this.selected = null;
-    this.hover = null;
-    this.ui = null; // UI がセット
-  }
+function fmtNum(n) {
+  n = Math.floor(n);
+  if (n < 10000) return String(n);
+  if (n < 1e8) return (n / 1e4).toFixed(n < 1e5 ? 1 : 0) + '万';
+  if (n < 1e12) return (n / 1e8).toFixed(n < 1e9 ? 1 : 0) + '億';
+  return (n / 1e12).toFixed(1) + '兆';
+}
+function fmtTime(t) { t = Math.max(0, Math.floor(t)); return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`; }
 
-  // ---------------- ラン開始 ----------------
-  newRun(mapIndex, diffIndex) {
-    this.mapIndex = mapIndex;
-    this.diff = DIFFICULTIES[diffIndex];
-    this.diffIndex = diffIndex;
-    this.buildPath(MAPS[mapIndex]);
-    this.units = [];
-    this.enemies = [];
-    this.projectiles = [];
-    this.effects = [];
-    this.crates = [];
-    this.strikes = [];
-    this.floaters = [];
-    this.spawnQueue = [];
-    this.wave = 0;
-    this.waveActive = false;
-    this.sp = 200;
-    this.baseMax = 100;
-    this.baseHp = 100;
-    this.level = 1;
-    this.xp = 0;
-    this.pendingLevels = 0;
-    this.kills = 0;
-    this.armorGained = 0;
-    this.reviveMul = 1;
-    this.waveIncome = 60;
-    this.rewardMul = 1;
-    this.dropMul = 1;
-    this.costMul = 1;
-    this.flags = {};
-    this.takenCards = {};
-    this.history = [];
-    this.weapons = {};
-    this.mods = {};
-    for (const k of CLASS_KEYS) {
-      this.weapons[k] = CLASSES[k].startWeapon;
-      this.mods[k] = { dmgMul: 0, rateMul: 0, rangeMul: 0, hpMul: 0, armor: 0, energyRegen: 0, energyMax: 0, tauntMul: 0 };
+// ---------- 空間グリッド（当たり判定の高速化） ----------
+const GRID = 80;
+const Grid = {
+  map: new Map(),
+  clear() { this.map.clear(); },
+  key(cx, cy) { return (cx + 50000) * 100000 + (cy + 50000); },
+  add(e) {
+    const k = this.key(Math.floor(e.x / GRID), Math.floor(e.y / GRID));
+    let a = this.map.get(k); if (!a) { a = []; this.map.set(k, a); } a.push(e);
+  },
+  query(x, y, r, cb) {
+    const x0 = Math.floor((x - r) / GRID), x1 = Math.floor((x + r) / GRID);
+    const y0 = Math.floor((y - r) / GRID), y1 = Math.floor((y + r) / GRID);
+    for (let cx = x0; cx <= x1; cx++) for (let cy = y0; cy <= y1; cy++) {
+      const a = this.map.get(this.key(cx, cy)); if (!a) continue;
+      for (let i = 0; i < a.length; i++) { const e = a[i]; if (!e.dead && cb(e) === false) return; }
     }
-    this.metaHp = Math.min(1, this.save.armor * 0.004);
-    this.aircraftTimer = 20;
-    this.idCounter = 1;
-    this.endless = false;
-    this.state = 'play';
-    this.selected = null;
-    this.placing = null;
-    this.paused = false;
-    this.ui.radio(pick(RADIO.start));
-    // 初期装備として1枚選択
-    this.pendingLevels = 1;
-    this.openCardChoice('初期装備を選択');
-  }
+  },
+};
 
-  buildPath(map) {
-    const pts = map.points.map(([c, r]) => ({ c, r }));
-    this.pathTiles = new Set();
-    for (let i = 0; i < pts.length - 1; i++) {
-      const a = pts[i], b = pts[i + 1];
-      const steps = Math.max(Math.abs(b.c - a.c), Math.abs(b.r - a.r));
-      for (let s = 0; s <= steps; s++) {
-        const c = a.c + Math.sign(b.c - a.c) * s, r = a.r + Math.sign(b.r - a.r) * s;
-        if (c >= 0 && c < COLS && r >= 0 && r < ROWS) this.pathTiles.add(c + ',' + r);
-      }
+// ---------- ラン ----------
+const Game = {
+  run: null,
+  uid: 1,
+
+  start(opts) {
+    // opts: { stage, hard, char, support, resume }
+    const sv = Save.data;
+    const stage = D.STAGES.find(s => s.id === opts.stage);
+    const ch = D.CHARS.find(c => c.id === opts.char);
+    const meta = metaStats(ch.id);
+    if (opts.support) {
+      const sp = D.CHARS.find(c => c.id === opts.support);
+      if (sp) addStats(meta, sp.bonus, 0.5);
     }
-    this.path = pts.map(p => ({ x: p.c * TILE + TILE / 2, y: p.r * TILE + TILE / 2 }));
-    // 最後の点 (画面外) をベース位置に置き換える
-    const last = pts[pts.length - 1];
-    const bc = clamp(last.c, 0, COLS - 1), br = clamp(last.r, 0, ROWS - 1);
-    this.basePos = { x: bc * TILE + TILE / 2, y: br * TILE + TILE / 2 };
-    this.path[this.path.length - 1] = { ...this.basePos };
-    this.baseTile = bc + ',' + br;
-    this.segLen = [];
-    this.pathLen = 0;
-    for (let i = 0; i < this.path.length - 1; i++) {
-      const l = Math.hypot(this.path[i + 1].x - this.path[i].x, this.path[i + 1].y - this.path[i].y);
-      this.segLen.push(l);
-      this.pathLen += l;
-    }
-  }
-
-  posOnPath(d) {
-    for (let i = 0; i < this.segLen.length; i++) {
-      if (d <= this.segLen[i]) {
-        const t = d / this.segLen[i], a = this.path[i], b = this.path[i + 1];
-        return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t, angle: Math.atan2(b.y - a.y, b.x - a.x) };
-      }
-      d -= this.segLen[i];
-    }
-    return { ...this.basePos, angle: 0 };
-  }
-
-  // ---------------- 強化値 ----------------
-  mod(cls, key, v) {
-    const old = this.mods[cls].hpMul;
-    this.mods[cls][key] += v;
-    if (key === 'hpMul') this.refreshHp(cls, old);
-    if (key === 'energyMax') for (const u of this.units) if (u.cls === cls) u.energyMax = this.energyMax();
-  }
-  modAll(key, v) { for (const k of CLASS_KEYS) this.mod(k, key, v); }
-  refreshHp(cls) {
-    for (const u of this.units) if (u.cls === cls) {
-      const ratio = u.hp / u.maxHp;
-      u.maxHp = this.unitMaxHp(cls);
-      u.hp = u.maxHp * ratio;
-    }
-  }
-  unitMaxHp(cls) { return CLASSES[cls].hp * (1 + this.mods[cls].hpMul) * (1 + this.metaHp); }
-  weaponOf(u) { return WEAPONS[this.weapons[u.cls]]; }
-  unitRange(u) { return this.weaponOf(u).range * (1 + this.mods[u.cls].rangeMul); }
-  unitDmg(u, w) { return w.dmg * (1 + this.mods[u.cls].dmgMul); }
-  unitInterval(u, w) { return w.rate / (1 + this.mods[u.cls].rateMul); }
-  energyMax() { return 100 * (1 + this.mods.wingdiver.energyMax); }
-  classCount(cls) { return this.units.filter(u => u.cls === cls).length; }
-  deployCost(cls) { return Math.round(CLASSES[cls].cost * this.costMul * (1 + 0.3 * this.classCount(cls))); }
-
-  // ---------------- 配置 ----------------
-  tileFree(c, r) {
-    if (c < 0 || r < 0 || c >= COLS || r >= ROWS) return false;
-    const k = c + ',' + r;
-    if (this.pathTiles.has(k) || k === this.baseTile) return false;
-    return !this.units.some(u => u.c === c && u.r === r);
-  }
-
-  placeUnit(cls, c, r) {
-    const cost = this.deployCost(cls);
-    if (this.sp < cost || !this.tileFree(c, r)) return false;
-    this.sp -= cost;
-    const u = {
-      id: this.idCounter++, cls, c, r,
-      x: c * TILE + TILE / 2, y: r * TILE + TILE / 2,
-      maxHp: this.unitMaxHp(cls), hp: 0, cd: 0.2, angle: -Math.PI / 2,
-      downed: false, downTimer: 0, downMax: 1, paid: cost,
-      energy: 0, energyMax: this.energyMax(), overheat: false, zcd: 0,
+    const R = this.run = {
+      stage, hard: !!opts.hard, curse: sv.facilities.altar ? sv.curse : 0, challenge: sv.facilities.altar ? sv.challenge : null,
+      char: ch, support: opts.support ? D.CHARS.find(c => c.id === opts.support) : null,
+      meta, t: 0, over: false, paused: false, speed: 1,
+      player: { x: 0, y: 0, r: 16, hp: 1, maxHp: 1, fx: 1, fy: 0, face: 1, invul: 0, level: 1, xp: 0, moving: false, revives: Math.floor(meta.revival) },
+      sup: null,
+      stats: null, weapons: [], passives: {}, banished: [],
+      rerolls: 1 + Math.floor(meta.reroll), banishes: Math.floor(meta.banish),
+      enemies: [], projs: [], zones: [], ebullets: [], gems: [], drops: [], fx: [], nums: [],
+      kills: 0, gold: 0, dmgTotal: 0, dmgBy: {}, special: 0, specialT: 0,
+      spawnAcc: 0, nextElite: 150, nextRush: 200, bossSpawned: false, bossIds: [], bossQueue: null,
+      levelQueue: 0, pendingChest: 0, earnedEquip: [], hitstop: 0, shake: 0, cutin: null,
+      floor: 1, cleared: false, killsBy: {}, rainT: 0, spinBeam: null,
     };
-    u.hp = u.maxHp;
-    u.energy = u.energyMax;
-    this.setupWeapon(u);
-    this.units.push(u);
-    this.burst(u.x, u.y, CLASSES[cls].color, 10);
-    return true;
-  }
+    if (R.support) R.sup = { x: -30, y: 20, r: 14 };
+    this.recalc();
+    R.player.hp = R.player.maxHp;
+    this.addWeapon(ch.weapon, 'p');
+    if (R.support) this.addWeapon(R.support.weapon, 's');
+    if (stage.special === 'bossrush') R.bossQueue = ['treant', 'frostdragon', 'mechtitan', 'void'];
+    if (opts.resume) this.applyResume(opts.resume);
+    sv.stats.runs++;
+    Sound.playBgm(stage.bgm);
+  },
 
-  setupWeapon(u) {
-    const w = this.weaponOf(u);
-    u.drones = null;
-    if (w.type === 'drone') {
-      u.drones = [];
-      for (let i = 0; i < w.drones; i++) u.drones.push({ a: i / w.drones * Math.PI * 2, x: u.x, y: u.y, cd: i * 0.07 });
-    }
-    u.orb = (u.cls === 'wingdiver' && this.flags.blinkball) ? { a: 0, x: u.x, y: u.y, cd: 0 } : null;
-  }
-
-  sellUnit(u) {
-    this.sp += Math.round(u.paid * 0.6);
-    this.units = this.units.filter(x => x !== u);
-    if (this.selected === u) this.selected = null;
-  }
-
-  // ---------------- ウェーブ ----------------
-  startWave() {
-    if (this.waveActive || this.state !== 'play') return;
-    this.wave++;
-    this.waveActive = true;
-    this.spawnQueue = this.makeWave(this.wave);
-    this.spawnTimer = 0.5;
-    if (this.wave % 10 === 0) this.ui.radio(pick(RADIO.boss), true);
-    else this.ui.radio(`ウェーブ ${this.wave}：` + pick(RADIO.start));
-  }
-
-  makeWave(n) {
-    const q = [];
-    const boss = n % 10 === 0;
-    if (n === 10 || (boss && n % 20 === 10)) q.push({ type: 'erginus', delay: 3 });
-    if (n === 20 || (boss && n % 20 === 0)) q.push({ type: 'mothership', delay: 3 });
-    let budget = 10 + n * 7 + Math.pow(n, 1.8);
-    if (n % 5 === 0 && !boss) budget *= 1.5;
-    if (boss) budget *= 0.6;
-    const pool = Object.entries(ENEMIES).filter(([k, e]) => !e.boss && (e.minWave || 1) <= n);
-    const interval = Math.max(0.28, 0.95 - n * 0.03);
-    while (budget > 0) {
-      // 新しい敵ほど出やすく
-      const weights = pool.map(([k, e]) => 1 + (e.minWave || 1) / 6);
-      let r = Math.random() * weights.reduce((a, b) => a + b, 0), i = 0;
-      while ((r -= weights[i]) > 0) i++;
-      const [key, e] = pool[i];
-      const group = e.budget <= 2 ? 3 + Math.floor(Math.random() * 4) : 1 + Math.floor(Math.random() * 2);
-      for (let g = 0; g < group && budget > 0; g++) {
-        q.push({ type: key, delay: g === 0 ? interval * 2 : interval * 0.5 });
-        budget -= e.budget;
-      }
-    }
-    return q;
-  }
-
-  spawnEnemy(type, at) {
-    const d = ENEMIES[type];
-    const n = this.wave;
-    const scale = Math.pow(1.17, n - 1) * (this.endless ? Math.pow(1.06, n - FINAL_WAVE) : 1) * this.diff.hp;
-    const hp = d.hp * (d.boss ? Math.pow(1.08, n - 1) * this.diff.hp : scale);
-    const start = at ? at : this.posOnPath(0);
-    const e = {
-      id: this.idCounter++, type, hp, maxHp: hp,
-      x: start.x + (at ? rand(-10, 10) : 0), y: start.y + (at ? rand(-10, 10) : 0),
-      d: 0, angle: 0, cd: rand(0, d.atkRate), hitFlash: 0, spawnCd: 3,
-      offset: rand(-8, 8), speedMul: rand(0.9, 1.1),
+  // 中断データ
+  snapshot() {
+    const R = this.run;
+    return {
+      stage: R.stage.id, hard: R.hard, curse: R.curse, challenge: R.challenge, char: R.char.id, support: R.support && R.support.id,
+      t: R.t, level: R.player.level, xp: R.player.xp, hp: R.player.hp, revives: R.player.revives,
+      weapons: R.weapons.filter(w => w.owner === 'p').map(w => ({ id: w.base, level: w.level, evo: w.evo, rare: w.rare })),
+      passives: R.passives, gold: R.gold, kills: R.kills, dmgTotal: R.dmgTotal, dmgBy: R.dmgBy, killsBy: R.killsBy,
+      rerolls: R.rerolls, banishes: R.banishes, banished: R.banished, special: R.special, earnedEquip: R.earnedEquip,
+      nextElite: R.nextElite, nextRush: R.nextRush, bossSpawned: R.bossSpawned, bossQueue: R.bossQueue, floor: R.floor,
     };
-    if (at && !d.flying) {
-      // 母船からの投下は最寄りの経路位置から
-      let best = 0, bd = 1e9;
-      for (let s = 0; s < this.pathLen; s += 10) { const p = this.posOnPath(s); const dd = dist2(p, at); if (dd < bd) { bd = dd; best = s; } }
-      e.d = best;
-    }
-    this.enemies.push(e);
-    return e;
-  }
+  },
+  applyResume(s) {
+    const R = this.run;
+    R.weapons = R.weapons.filter(w => w.owner !== 'p');
+    for (const w of s.weapons) { const nw = this.addWeapon(w.id, 'p', w.rare); nw.level = w.level; if (w.evo) { this.makeEvolved(nw, w.evo); if (w.evo.startsWith('fus_')) nw.id = w.evo; } }
+    Object.assign(R, { passives: s.passives || {}, gold: s.gold, kills: s.kills, dmgTotal: s.dmgTotal, dmgBy: s.dmgBy || {}, killsBy: s.killsBy || {},
+      rerolls: s.rerolls, banishes: s.banishes, banished: s.banished || [], special: s.special || 0, earnedEquip: s.earnedEquip || [],
+      nextElite: s.nextElite, nextRush: s.nextRush, bossSpawned: false, bossQueue: s.bossQueue, floor: s.floor || 1, t: s.t });
+    R.player.level = s.level; R.player.xp = s.xp; R.player.revives = s.revives;
+    this.recalc();
+    R.player.hp = Math.min(R.player.maxHp, s.hp);
+    R.weapons.forEach(w => this.calcWeapon(w));
+  },
 
-  // ---------------- 更新 ----------------
+  // ---------- 能力値 ----------
+  recalc() {
+    const R = this.run;
+    const s = Object.assign(emptyStats(), R.meta);
+    for (const id in R.passives) { const p = D.PASSIVES[id]; s[p.stat] += p.per * R.passives[id]; }
+    R.stats = s;
+    const p = R.player;
+    const oldMax = p.maxHp || 0;
+    p.maxHp = Math.round(R.char.hp * (1 + s.maxHp));
+    if (oldMax && p.maxHp > oldMax) p.hp += p.maxHp - oldMax;
+    p.speed = 150 * R.char.speed * (1 + s.moveSpeed);
+    p.magnet = 60 * (1 + s.magnet);
+    R.weapons.forEach(w => this.calcWeapon(w));
+  },
+
+  addWeapon(id, owner, rare) {
+    const R = this.run;
+    const def = D.WEAPONS[id];
+    if (rare === undefined) rare = owner === 'p' && Math.random() < 0.08 * (1 + R.stats.luck);
+    const w = { uid: this.uid++, id, base: id, def, name: def.name, type: def.type, elem: def.elem, icon: def.icon, level: 1, owner, rare, timer: 0.3, evo: null, st: {} };
+    R.weapons.push(w);
+    this.calcWeapon(w);
+    if (owner === 'p') Save.data.stats.weaponsSeen[id] = true;
+    return w;
+  },
+  makeEvolved(w, evoId) {
+    const ev = D.EVOLUTIONS.find(e => e.id === evoId);
+    if (ev) { w.evo = ev.id; w.name = ev.name; w.level = D.WEAPON_MAX; this.calcWeapon(w); return; }
+    const fu = D.FUSIONS.find(f => f.id === evoId);
+    if (fu) { w.evo = fu.id; w.name = fu.name; w.type = fu.type; w.elem = fu.elem; w.icon = fu.icon; w.level = D.WEAPON_MAX; w.st = {}; this.calcWeapon(w); }
+  },
+  calcWeapon(w) {
+    const R = this.run; const s = R.stats;
+    let p;
+    const fu = w.evo && D.FUSIONS.find(f => f.id === w.evo);
+    if (fu) p = Object.assign({}, fu.base);
+    else {
+      p = Object.assign({}, w.def.base);
+      const lvl = w.owner === 's' ? Math.min(D.WEAPON_MAX, 1 + Math.floor(R.player.level / 6)) : w.level;
+      if (w.owner === 's') w.level = lvl;
+      for (let i = 0; i < lvl - 1; i++) { const d = w.def.lv[i]; for (const k in d) p[k] = (p[k] || 0) + d[k]; }
+      const ev = w.evo && D.EVOLUTIONS.find(e => e.id === w.evo);
+      if (ev) for (const k in ev.mult) { if (k === 'amount' || k === 'pierce') p[k] = (p[k] || 0) + ev.mult[k]; else p[k] = (p[k] || 0) * ev.mult[k]; }
+    }
+    const rare = w.rare ? 1.3 : 1;
+    p.dmg = p.dmg * (1 + s.might) * rare * (w.owner === 's' ? 0.7 : 1);
+    p.cd = Math.max(0.08, p.cd * Math.max(0.3, 1 - s.cooldown));
+    if (p.amount !== undefined) p.amount = Math.round(p.amount + s.amount);
+    for (const k of ['area', 'size', 'radius', 'width']) if (p[k] !== undefined) p[k] *= (1 + s.area);
+    if (p.length !== undefined) p.length *= (1 + s.area * 0.5);
+    if (p.speed !== undefined) p.speed *= (1 + s.projSpeed);
+    if (p.dur !== undefined) p.dur *= (1 + s.duration);
+    if (p.slow !== undefined) p.slow = Math.min(0.85, p.slow);
+    w.p = p;
+  },
+
+  // ---------- メインループ ----------
   update(dt) {
-    if (this.state !== 'play' || this.paused || this.ui.modalOpen) return;
-    this.time += dt;
+    const R = this.run; if (!R || R.over) return;
+    if (R.hitstop > 0) { R.hitstop -= dt; return; }
+    if (R.cutin) { R.cutin.t -= dt; if (R.cutin.t <= 0) R.cutin = null; dt *= 0.15; }
+    R.t += dt;
+    Save.data.stats.playTime += dt;
+    const p = R.player;
 
-    // スポーン
-    if (this.waveActive && this.spawnQueue.length) {
-      this.spawnTimer -= dt;
-      while (this.spawnQueue.length && this.spawnTimer <= 0) {
-        const s = this.spawnQueue.shift();
-        this.spawnEnemy(s.type);
-        if (this.spawnQueue.length) this.spawnTimer += this.spawnQueue[0].delay;
-      }
+    // 移動
+    const mv = Input.vector();
+    p.moving = mv.x !== 0 || mv.y !== 0;
+    if (p.moving) {
+      p.x += mv.x * p.speed * dt; p.y += mv.y * p.speed * dt;
+      const l = Math.hypot(mv.x, mv.y); p.fx = mv.x / l; p.fy = mv.y / l;
+      if (Math.abs(mv.x) > 0.1) p.face = mv.x > 0 ? 1 : -1;
+    }
+    if (p.invul > 0) p.invul -= dt;
+    if (R.stats.regen > 0 && R.challenge !== 'noheal') p.hp = Math.min(p.maxHp, p.hp + R.stats.regen * dt);
+    if (R.sup) {
+      const tx = p.x - p.fx * 40 - 10, ty = p.y - p.fy * 40 + 10;
+      R.sup.x += (tx - R.sup.x) * Math.min(1, dt * 4); R.sup.y += (ty - R.sup.y) * Math.min(1, dt * 4);
     }
 
+    // グリッド更新
+    Grid.clear();
+    for (const e of R.enemies) Grid.add(e);
+
+    this.spawnLogic(dt);
+    this.updateWeapons(dt);
+    this.updateProjs(dt);
+    this.updateZones(dt);
     this.updateEnemies(dt);
-    this.updateUnits(dt);
-    this.updateProjectiles(dt);
-    this.updateStrikes(dt);
+    this.updateEBullets(dt);
+    this.updatePickups(dt);
+    this.updateFx(dt);
+    this.updateSpecial(dt);
 
-    // 強襲エアクラフト
-    if (this.flags.aircraft && this.waveActive) {
-      this.aircraftTimer -= dt;
-      if (this.aircraftTimer <= 0) {
-        this.aircraftTimer = 20;
-        const targets = this.enemies.filter(e => !ENEMIES[e.type].flying).sort(() => Math.random() - 0.5).slice(0, 15);
-        for (const e of targets) {
-          this.damageEnemy(e, 90 * (1 + this.wave * 0.15) * (1 + this.mods.airraider.dmgMul));
-          this.explosion(e.x, e.y, 30, '#ff7043');
-        }
-        this.ui.radio('強襲エアクラフト、爆撃開始！');
+    // 消えた敵を詰める
+    let j = 0;
+    for (let i = 0; i < R.enemies.length; i++) { const e = R.enemies[i]; if (!e.dead) R.enemies[j++] = e; }
+    R.enemies.length = j;
+
+    if (R.shake > 0) R.shake = Math.max(0, R.shake - dt * 30);
+
+    // クリア判定
+    const st = R.stage;
+    if (st.time && !st.special && R.t >= st.time) this.finish(true);
+    if (st.special === 'vault' && R.t >= st.time) this.finish(true);
+    if (st.special === 'abyss') { const f = 1 + Math.floor(R.t / 90); if (f > R.floor) { R.floor = f; UI.toast(`深淵 ${f}階`); this.spawnElite(); } }
+
+    if (R.levelQueue > 0 && !UI.modalOpen()) { R.levelQueue--; UI.showLevelUp(); }
+    else if (R.pendingChest > 0 && !UI.modalOpen()) { R.pendingChest--; this.openChest(); }
+  },
+
+  // ---------- 敵の出現 ----------
+  diffMul() {
+    const R = this.run;
+    let m = R.stage.hpMul * (R.hard ? 2.5 : 1) * (1 + R.curse * 0.18);
+    if (R.stage.special === 'abyss') m *= Math.pow(1.32, R.floor - 1);
+    return m;
+  },
+  currentPool() {
+    const w = this.run.stage.waves; let pool = w[0][1];
+    for (const x of w) if (this.run.t >= x[0]) pool = x[1];
+    return pool;
+  },
+  spawnLogic(dt) {
+    const R = this.run; const st = R.stage;
+    const cap = Save.data.settings.light ? 320 : 650;
+    let rate = (2.2 + R.t / 14) * (1 + R.curse * 0.1) * (R.hard ? 1.4 : 1);
+    if (st.special === 'bossrush') rate = 1.2;
+    if (st.special === 'abyss') rate *= 1 + R.floor * 0.08;
+    rate = Math.min(rate, 40);
+    R.spawnAcc += rate * dt;
+    while (R.spawnAcc >= 1) {
+      R.spawnAcc--;
+      if (R.enemies.length >= cap) break;
+      let type = pick(this.currentPool());
+      if (st.special === 'vault' && Math.random() < 0.15) type = 'goldslime';
+      else if (type === 'goldslime' && Math.random() < 0.6) type = 'slime';
+      this.spawnEnemy(type);
+    }
+    // 中ボス
+    if (R.t >= R.nextElite && st.special !== 'bossrush') { R.nextElite += st.special === 'throne' ? 60 : 150; this.spawnElite(); }
+    // ラッシュ
+    if (R.t >= R.nextRush && st.special !== 'bossrush') { R.nextRush += 200; this.spawnRush(); }
+    // ステージボス（倒さなくてもクリアできる）
+    if (st.boss && st.time && !R.bossSpawned && R.t >= st.time - 90) { R.bossSpawned = true; this.spawnBoss(st.boss); }
+    if (st.special === 'throne' && !R.bossSpawned && R.t >= 60) { R.bossSpawned = true; this.spawnBoss('void'); }
+    if (st.special === 'bossrush' && R.bossIds.every(b => b.dead) && R.t > 3) {
+      if (R.bossQueue.length) { const b = R.bossQueue.shift(); R.bossIds = [this.spawnBoss(b, 2 + (3 - R.bossQueue.length))]; }
+      else if (!R.cleared) { Save.data.stats.bossrushClear = true; this.finish(true); }
+    }
+  },
+  spawnPos(extra = 0) {
+    const p = this.run.player;
+    const v = Render.viewSize();
+    const rad = Math.hypot(v.w, v.h) / 2 + 40 + extra;
+    const a = Math.random() * TAU;
+    return { x: p.x + Math.cos(a) * rad, y: p.y + Math.sin(a) * rad };
+  },
+  spawnEnemy(type, pos, scale = 1) {
+    const R = this.run;
+    const def = D.ENEMIES[type] || D.BOSSES[type];
+    const pp = pos || this.spawnPos();
+    const tm = 1 + R.t / 60 * 0.15;
+    const hp = def.hp * this.diffMul() * tm * scale;
+    const e = {
+      id: this.uid++, type, def, x: pp.x, y: pp.y, r: def.r, hp, maxHp: hp, spd: def.spd * rand(0.9, 1.1),
+      dmg: def.dmg * (1 + (this.diffMul() - 1) * 0.35) * (1 + R.t / 600 * 0.5), xp: def.xp, weak: def.weak, ai: def.ai,
+      kx: 0, ky: 0, flash: 0, slowT: 0, slowF: 0, frozen: 0, lh: {}, ph: Math.random() * TAU, atk: rand(1, 3), dead: false,
+      elite: false, boss: false, hue: def.hue || 0, coin: def.coin || 0, life: def.ai === 'flee' ? 18 : 0,
+    };
+    R.enemies.push(e);
+    return e;
+  },
+  spawnElite() {
+    const R = this.run;
+    const type = pick(this.currentPool().filter(t => t !== 'goldslime')) || 'slime';
+    const e = this.spawnEnemy(type, null, 25);
+    e.elite = true; e.r *= 1.8; e.spd *= 0.85; e.xp *= 20; e.dmg *= 1.5; e.kbRes = 0.9;
+    UI.toast('強敵が現れた！');
+  },
+  spawnBoss(type, scale = 1) {
+    const R = this.run;
+    let def = D.BOSSES[type];
+    if (type === 'void') def = Object.assign({}, D.BOSSES.mechtitan, { name: '虚ろの王', hp: 60000, r: 70, color: '#6a3cff', hue: 250, dmg: 45 });
+    const pp = this.spawnPos(-60);
+    const tm = 1 + R.t / 60 * 0.15;
+    const hp = def.hp * this.diffMul() * tm * scale;
+    const e = {
+      id: this.uid++, type, def, x: pp.x, y: pp.y, r: def.r, hp, maxHp: hp, spd: def.spd, dmg: def.dmg * (1 + R.curse * 0.1) * (R.hard ? 1.5 : 1),
+      xp: def.xp, weak: def.weak, ai: 'boss', kx: 0, ky: 0, flash: 0, slowT: 0, slowF: 0, frozen: 0, lh: {}, ph: 0, atk: 3, dash: 0,
+      dead: false, elite: true, boss: true, kbRes: 1, hue: def.hue || 0, coin: 0, life: 0,
+    };
+    R.enemies.push(e); R.bossIds.push(e);
+    UI.toast(`${def.name} が現れた！`, 3);
+    Sound.playBgm(R.stage.bgm, true);
+    R.shake = 12;
+    return e;
+  },
+  spawnRush() {
+    const R = this.run; const p = R.player;
+    const type = pick(this.currentPool());
+    const n = Save.data.settings.light ? 30 : 60;
+    if (Math.random() < 0.5) {
+      // 包囲：輪になって迫ってくる
+      const rad = 520;
+      for (let i = 0; i < n; i++) { const a = i / n * TAU; this.spawnEnemy(type, { x: p.x + Math.cos(a) * rad, y: p.y + Math.sin(a) * rad }); }
+      UI.toast('包囲ラッシュ！');
+    } else {
+      // 横一列の突撃
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        const e = this.spawnEnemy(type, { x: p.x - dir * 600 - (i % 3) * 30, y: p.y - 420 + (i / n) * 840 });
+        e.ai = 'charge'; e.vx = dir * (140 + R.t / 20); e.life = 9;
       }
+      UI.toast('突撃ラッシュ！');
     }
+  },
 
-    // アイテム箱
-    for (const c of this.crates) {
-      c.t += dt;
-      if (c.t > 1.2) { c.collected = true; this.collectCrate(c); }
-    }
-    this.crates = this.crates.filter(c => !c.collected);
-
-    // エフェクト
-    for (const f of this.effects) f.t += dt;
-    this.effects = this.effects.filter(f => f.t < f.life);
-    for (const f of this.floaters) { f.t += dt; f.y -= 20 * dt; }
-    this.floaters = this.floaters.filter(f => f.t < 0.9);
-
-    // ウェーブ終了
-    if (this.waveActive && !this.spawnQueue.length && !this.enemies.length) {
-      this.waveActive = false;
-      const income = this.waveIncome + this.wave * 4;
-      this.sp += income;
-      this.ui.radio(pick(RADIO.clear) + ` (支給 +${income}SP)`);
-      for (const u of this.units) if (!u.downed) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.3);
-      if (this.wave === FINAL_WAVE && !this.endless) { this.victory(); return; }
-    }
-    if (this.baseHp <= 0) this.gameOver();
-  }
-
-  updateEnemies(dt) {
-    const dm = this.diff.dmg;
-    for (const e of this.enemies) {
-      const d = ENEMIES[e.type];
-      e.hitFlash = Math.max(0, e.hitFlash - dt);
-      e.cd -= dt;
-      // 攻撃対象の探索 (フェンサーは挑発で優先)
-      let target = null, best = 1e9;
-      for (const u of this.units) {
-        if (u.downed) continue;
-        let range = d.ranged ? d.atkRange : 46;
-        let prio = 0;
-        if (u.cls === 'fencer') { range += 25 * (1 + this.mods.fencer.tauntMul); prio = -1e6; }
-        const dd = dist2(e, u);
-        if (dd <= range * range && dd + prio < best) { best = dd + prio; target = u; }
-      }
-      let moving = true;
-      if (target) {
-        e.angle = Math.atan2(target.y - e.y, target.x - e.x);
-        if (!d.ranged) moving = false; // 近接型は足を止めて攻撃
-        if (e.cd <= 0) {
-          e.cd = d.atkRate;
-          if (d.ranged) {
-            this.projectiles.push({ enemy: true, x: e.x, y: e.y, target, speed: 260, dmg: d.dmg * dm, color: d.proj || '#fff', size: d.boss ? 5 : 3 });
-          } else {
-            this.damageUnit(target, d.dmg * dm, e);
-            this.effects.push({ kind: 'slash', x: target.x, y: target.y, t: 0, life: 0.2, color: '#ff5252' });
-          }
-        }
-      }
-      // 母船は巨大生物を投下
-      if (d.spawner) {
-        e.spawnCd -= dt;
-        if (e.spawnCd <= 0) { e.spawnCd = 3.5; for (let i = 0; i < 3; i++) this.spawnEnemy(d.spawner, { x: e.x, y: e.y }); }
-      }
-      if (moving) {
-        const sp = d.speed * e.speedMul;
-        if (d.flying) {
-          const dx = this.basePos.x - e.x, dy = this.basePos.y - e.y, l = Math.hypot(dx, dy);
-          if (!target) e.angle = Math.atan2(dy, dx);
-          if (l < 18) { this.hitBase(e); continue; }
-          e.x += dx / l * sp * dt; e.y += dy / l * sp * dt;
-          e.d = this.pathLen * (1 - l / 900);
-        } else {
-          e.d += sp * dt;
-          if (e.d >= this.pathLen) { this.hitBase(e); continue; }
-          const p = this.posOnPath(e.d);
-          const nx = -Math.sin(p.angle), ny = Math.cos(p.angle);
-          e.x = p.x + nx * e.offset; e.y = p.y + ny * e.offset;
-          if (!target) e.angle = p.angle;
-        }
-      }
-    }
-    this.enemies = this.enemies.filter(e => !e.dead);
-  }
-
-  hitBase(e) {
-    const d = ENEMIES[e.type];
-    e.dead = true;
-    this.baseHp -= d.baseDmg * this.diff.dmg;
-    this.explosion(this.basePos.x, this.basePos.y, 25, '#ef5350');
-    this.ui.shake(d.boss ? 12 : 4);
-  }
-
-  damageUnit(u, dmg, src) {
-    if (u.downed) return;
-    if (u.cls === 'wingdiver' && this.flags.diverDodge && Math.random() < this.flags.diverDodge) {
-      this.floaters.push({ x: u.x, y: u.y - 14, text: '回避', color: '#80d8ff', t: 0 });
-      return;
-    }
-    let mul = 1 - this.mods[u.cls].armor;
-    if (this.flags.capsule && this.units.some(a => a.cls === 'airraider' && !a.downed && dist2(a, u) < 110 * 110)) mul *= 0.8;
-    u.hp -= dmg * Math.max(0.1, mul);
-    if (u.cls === 'fencer' && this.flags.reflect && src && !src.dead) this.damageEnemy(src, dmg * this.flags.reflect);
-    if (u.hp <= 0) {
-      u.hp = 0;
-      u.downed = true;
-      u.downTimer = 0;
-      u.downMax = 12 * this.reviveMul;
-      if (Math.random() < 0.4) this.ui.radio(pick(RADIO.down));
-    }
-  }
-
-  // ---- ユニット攻撃 ----
-  findTarget(u, range, air, from) {
-    from = from || u;
-    let best = null, bd = -1;
-    const r2 = range * range;
-    for (const e of this.enemies) {
-      if (e.dead) continue;
-      if (!air && ENEMIES[e.type].flying) continue;
-      if (dist2(from, e) > r2) continue;
-      const score = e.d + (ENEMIES[e.type].boss ? 50 : 0);
-      if (score > bd) { bd = score; best = e; }
-    }
+  // ---------- 武器 ----------
+  ownerPos(w) { const R = this.run; return w.owner === 's' && R.sup ? R.sup : R.player; },
+  nearest(x, y, maxR = 700) {
+    let best = null, bd = maxR * maxR;
+    for (const e of this.run.enemies) { if (e.dead) continue; const d = dist2(x, y, e.x, e.y); if (d < bd) { bd = d; best = e; } }
     return best;
-  }
-
-  updateUnits(dt) {
-    for (const u of this.units) {
-      if (u.downed) {
-        u.downTimer += dt;
-        if (u.downTimer >= u.downMax) { u.downed = false; u.hp = u.maxHp * 0.6; this.burst(u.x, u.y, '#66bb6a', 8); }
-        continue;
-      }
-      const w = this.weaponOf(u);
-      const range = this.unitRange(u);
-
-      // 回復系
-      if (u.cls === 'airraider') this.healAround(u, 100, (this.flags.lifevendor ? 4.5 : 1.5) * dt);
-      if (u.cls === 'ranger' && this.flags.reverser) this.healAround(u, 85, 2 * dt);
-
-      // ウイングダイバーのエネルギー
-      if (u.cls === 'wingdiver') {
-        const regen = (u.overheat ? u.energyMax / 2.8 : 18) * (1 + this.mods.wingdiver.energyRegen);
-        u.energy = Math.min(u.energyMax, u.energy + regen * dt);
-        if (u.overheat && u.energy >= u.energyMax) u.overheat = false;
-      }
-
-      // 追加攻撃 (ZE-GUN / ブリンク・ボール)
-      const dps = this.unitDmg(u, w) * (w.pellets || 1) * (w.shots || 1) * (w.type === 'strike' ? w.hits : 1) / this.unitInterval(u, w);
-      if (u.cls === 'ranger' && this.flags.zegun) {
-        u.zcd -= dt;
-        if (u.zcd <= 0) {
-          const t = this.findTarget(u, 140, true);
-          if (t) { u.zcd = 0.25; this.damageEnemy(t, dps * 0.4 * 0.25); this.tracer(u.x + 8, u.y + 8, t, '#a5d6a7'); }
-        }
-      }
-      if (u.orb) {
-        u.orb.a += dt * 3;
-        u.orb.x = u.x + Math.cos(u.orb.a) * 18; u.orb.y = u.y + Math.sin(u.orb.a) * 18;
-        u.orb.cd -= dt;
-        if (u.orb.cd <= 0) {
-          const t = this.findTarget(u, 150, true, u.orb);
-          if (t) { u.orb.cd = 0.3; this.damageEnemy(t, dps * 0.5 * 0.3); this.tracer(u.orb.x, u.orb.y, t, '#ff80ab'); }
-        }
-      }
-
-      // ドローン
-      if (w.type === 'drone') {
-        u.drones.forEach((d, i) => {
-          d.a += dt * 1.6;
-          d.x = u.x + Math.cos(d.a) * 26; d.y = u.y + Math.sin(d.a) * 26;
-          d.cd -= dt;
-          if (d.cd <= 0) {
-            const t = this.findTarget(u, range, true, d);
-            if (t) { d.cd = this.unitInterval(u, w); this.damageEnemy(t, this.unitDmg(u, w)); this.tracer(d.x, d.y, t, w.color); }
-          }
-        });
-        const t = this.findTarget(u, range, true);
-        if (t) u.angle = Math.atan2(t.y - u.y, t.x - u.x);
-        continue;
-      }
-
-      u.cd -= dt;
-      if (u.cd > 0) continue;
-      if (u.cls === 'wingdiver' && (u.overheat || u.energy < (w.energy || 0))) {
-        if (!u.overheat && u.energy < (w.energy || 0)) u.overheat = true;
-        continue;
-      }
-      let target;
-      if (w.type === 'strike') target = this.findCluster(u, range, w);
-      else target = this.findTarget(u, range, w.air);
-      if (!target) continue;
-      u.angle = Math.atan2(target.y - u.y, target.x - u.x);
-      u.cd = this.unitInterval(u, w);
-      if (u.cls === 'wingdiver') u.energy -= w.energy || 0;
-      this.fire(u, w, target, range);
+  },
+  randomOnScreen(n) {
+    const R = this.run; const v = Render.viewSize(); const p = R.player;
+    const list = R.enemies.filter(e => !e.dead && Math.abs(e.x - p.x) < v.w / 2 && Math.abs(e.y - p.y) < v.h / 2);
+    const out = [];
+    for (let i = 0; i < n && list.length; i++) out.push(list.splice(Math.floor(Math.random() * list.length), 1)[0]);
+    return out;
+  },
+  updateWeapons(dt) {
+    const R = this.run;
+    for (const w of R.weapons) {
+      const o = this.ownerPos(w); const p = w.p;
+      // 常駐系
+      if (w.type === 'minion') { this.tickMinions(w, dt, o); continue; }
+      if (w.type === 'drone') { this.tickDrones(w, dt, o); continue; }
+      if (w.type === 'orbit') { this.tickOrbit(w, dt, o); continue; }
+      w.timer -= dt;
+      if (w.timer > 0) continue;
+      w.timer = p.cd;
+      this.fire(w, o);
     }
-  }
-
-  healAround(u, r, amt) {
-    for (const a of this.units) if (!a.downed && a.hp < a.maxHp && dist2(a, u) < r * r) a.hp = Math.min(a.maxHp, a.hp + amt * (a.maxHp / 100));
-  }
-
-  findCluster(u, range, w) {
-    let best = null, bc = 0;
-    const r2 = range * range;
-    for (const e of this.enemies) {
-      if (!w.air && ENEMIES[e.type].flying) continue;
-      if (dist2(u, e) > r2) continue;
-      let c = 0;
-      for (const o of this.enemies) if (dist2(o, e) < w.radius * w.radius) c += ENEMIES[o.type].boss ? 5 : 1;
-      if (c > bc) { bc = c; best = e; }
-    }
-    return best;
-  }
-
-  fire(u, w, target, range) {
-    const dmg = this.unitDmg(u, w);
-    const ox = u.x + Math.cos(u.angle) * 14, oy = u.y + Math.sin(u.angle) * 14;
+  },
+  fire(w, o) {
+    const R = this.run; const p = w.p; const pl = R.player;
     switch (w.type) {
-      case 'hitscan': {
-        const pellets = w.pellets || 1;
-        const near = pellets > 1 ? this.enemies.filter(e => dist2(e, target) < 35 * 35 && (w.air || !ENEMIES[e.type].flying)) : [target];
-        for (let i = 0; i < pellets; i++) {
-          const t = near[i % near.length];
-          this.damageEnemy(t, dmg);
-          if (i < 4) this.tracer(ox, oy, t, w.color, pellets > 1 ? 6 : 0);
+      case 'homing': {
+        for (let i = 0; i < p.amount; i++) {
+          const t = this.nearest(o.x, o.y, 600);
+          const a = t ? Math.atan2(t.y - o.y, t.x - o.x) + rand(-0.4, 0.4) : rand(0, TAU);
+          R.projs.push({ kind: 'homing', w, x: o.x, y: o.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, r: p.size, life: p.dur, pierce: p.pierce, target: t, hit: {} });
+        }
+        Sound.sfx('shoot'); break;
+      }
+      case 'arrow': {
+        const base = Math.atan2(pl.fy, pl.fx);
+        for (let i = 0; i < p.amount; i++) {
+          const a = base + (i - (p.amount - 1) / 2) * p.spread;
+          R.projs.push({ kind: 'arrow', w, x: o.x, y: o.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, r: p.size, life: p.dur, pierce: p.pierce, hit: {} });
+        }
+        Sound.sfx('shoot'); break;
+      }
+      case 'shard': {
+        const off = Math.random() * TAU;
+        for (let i = 0; i < p.amount; i++) {
+          const a = off + i / p.amount * TAU;
+          R.projs.push({ kind: 'shard', w, x: o.x, y: o.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, r: p.size, life: p.dur, pierce: p.pierce, hit: {} });
+        }
+        Sound.sfx('shoot'); break;
+      }
+      case 'slash': {
+        const base = Math.atan2(pl.fy, pl.fx);
+        for (let i = 0; i < p.amount; i++) {
+          const a = base + (i % 2 ? Math.PI : 0) + Math.floor(i / 2) * 0.6;
+          setTimeout(() => { if (this.run && !this.run.over) this.doSlash(w, o, a); }, i * 90);
         }
         break;
       }
-      case 'cone': {
-        const hits = this.enemies.filter(e => {
-          if (!w.air && ENEMIES[e.type].flying) return false;
-          if (dist2(u, e) > range * range) return false;
-          let da = Math.abs(Math.atan2(e.y - u.y, e.x - u.x) - u.angle);
-          if (da > Math.PI) da = Math.PI * 2 - da;
-          return da < 0.6;
-        }).slice(0, w.hits);
-        for (const e of hits) this.damageEnemy(e, dmg);
-        this.effects.push({ kind: 'cone', x: u.x, y: u.y, a: u.angle, r: range, t: 0, life: 0.08, color: w.color });
-        break;
-      }
-      case 'line': {
-        const end = { x: u.x + Math.cos(u.angle) * range, y: u.y + Math.sin(u.angle) * range };
-        const hits = [];
-        for (const e of this.enemies) {
-          if (!w.air && ENEMIES[e.type].flying) continue;
-          const r = distToSegment(e, u, end);
-          if (r.d < ENEMIES[e.type].size + 6) hits.push({ e, t: r.t });
+      case 'beam': {
+        for (let i = 0; i < p.amount; i++) {
+          const t = this.nearest(o.x, o.y, p.length + 60);
+          const a = t ? Math.atan2(t.y - o.y, t.x - o.x) + i * 0.35 : Math.atan2(pl.fy, pl.fx) + i * 0.35;
+          R.zones.push({ kind: 'beam', w, ang: a, life: p.dur, max: p.dur, tick: 0, owner: o });
         }
-        hits.sort((a, b) => a.t - b.t);
-        for (const h of hits.slice(0, (w.pierce || 0) + 1)) this.damageEnemy(h.e, dmg);
-        const wide = w.dmg >= 100 ? 5 : w.dmg >= 40 ? 3 : 2;
-        this.effects.push({ kind: 'beam', x1: ox, y1: oy, x2: end.x, y2: end.y, t: 0, life: w.rate > 1 ? 0.3 : 0.1, color: w.color, w: wide });
-        break;
+        Sound.sfx('shoot'); break;
       }
-      case 'rocket': {
-        const shots = w.shots || 1;
-        for (let i = 0; i < shots; i++) {
-          const a = u.angle + (shots > 1 ? rand(-1.2, 1.2) : 0);
-          this.projectiles.push({
-            x: ox, y: oy, vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed, target, tx: target.x, ty: target.y,
-            speed: w.speed, dmg, splash: w.splash, air: w.air, homing: w.homing, color: w.color, life: 3, owner: u,
-          });
-        }
-        break;
-      }
-      case 'chain': {
-        let cur = target, from = { x: ox, y: oy }, d = dmg;
-        const hit = new Set();
-        for (let i = 0; i < w.chain && cur; i++) {
-          hit.add(cur);
-          this.damageEnemy(cur, d);
-          this.effects.push({ kind: 'bolt', x1: from.x, y1: from.y, x2: cur.x, y2: cur.y, t: 0, life: 0.15, color: w.color });
-          from = cur; d *= 0.85;
-          let next = null, bd = 90 * 90;
-          for (const e of this.enemies) if (!hit.has(e) && !e.dead) { const dd = dist2(e, from); if (dd < bd) { bd = dd; next = e; } }
-          cur = next;
-        }
+      case 'aura': {
+        const rr = p.radius;
+        Grid.query(o.x, o.y, rr + 30, e => { if (dist2(o.x, o.y, e.x, e.y) < (rr + e.r) ** 2) this.hit(e, p.dmg, w, 0.3, o); });
         break;
       }
       case 'strike': {
-        const cx = target.x, cy = target.y;
-        this.effects.push({ kind: 'marker', x: cx, y: cy, r: w.radius, t: 0, life: 0.8, color: w.color });
-        this.strikes.push({ x: cx, y: cy, w, dmg, delay: 0.7, left: w.hits, tick: w.beam ? 0.07 : 0.1, timer: 0 });
+        const ts = this.randomOnScreen(p.amount);
+        for (const t of ts) {
+          R.fx.push({ kind: 'bolt', x: t.x, y: t.y, life: 0.25, max: 0.25, color: D.ELEM[w.elem].color });
+          Grid.query(t.x, t.y, p.area + 30, e => { if (dist2(t.x, t.y, e.x, e.y) < (p.area + e.r) ** 2) { this.hit(e, p.dmg, w, 0.5); if (p.slow) this.slow(e, p.slow, 2); } });
+        }
+        if (ts.length) Sound.sfx('hit'); break;
+      }
+      case 'bomb': {
+        for (let i = 0; i < p.amount; i++) {
+          const t = this.randomOnScreen(1)[0];
+          const tx = t ? t.x : o.x + rand(-200, 200), ty = t ? t.y : o.y + rand(-200, 200);
+          R.projs.push({ kind: 'lob', w, x: o.x, y: o.y, sx: o.x, sy: o.y, tx, ty, t: 0, life: 0.55, r: 8, hit: {} });
+        }
+        break;
+      }
+      case 'boomerang': {
+        for (let i = 0; i < p.amount; i++) {
+          const t = this.nearest(o.x, o.y, 500);
+          const a = (t ? Math.atan2(t.y - o.y, t.x - o.x) : Math.atan2(pl.fy, pl.fx)) + (i - (p.amount - 1) / 2) * 0.5;
+          R.projs.push({ kind: 'boomerang', w, x: o.x, y: o.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, r: p.size, life: p.dur * 2.2, t: 0, back: false, hit: {}, rot: 0 });
+        }
+        break;
+      }
+      case 'mine': {
+        for (let i = 0; i < p.amount; i++) R.zones.push({ kind: 'mine', w, x: o.x + rand(-30, 30) * i, y: o.y + rand(-30, 30) * i, life: p.dur, max: p.dur, arm: 0.4 });
+        break;
+      }
+      case 'tornado': {
+        for (let i = 0; i < p.amount; i++) {
+          const a = rand(0, TAU);
+          R.zones.push({ kind: 'tornado', w, x: o.x, y: o.y, vx: Math.cos(a) * p.speed, vy: Math.sin(a) * p.speed, r: p.size, life: p.dur, max: p.dur, tick: 0 });
+        }
+        break;
+      }
+      case 'puddle': {
+        const ts = this.randomOnScreen(p.amount);
+        for (let i = 0; i < p.amount; i++) {
+          const t = ts[i]; const x = t ? t.x : o.x + rand(-150, 150), y = t ? t.y : o.y + rand(-150, 150);
+          R.zones.push({ kind: 'puddle', w, x, y, r: p.area, life: p.dur, max: p.dur, tick: 0 });
+        }
+        break;
+      }
+      case 'meteor': {
+        const ts = this.randomOnScreen(p.amount);
+        for (let i = 0; i < p.amount; i++) {
+          const t = ts[i]; const x = t ? t.x : o.x + rand(-200, 200), y = t ? t.y : o.y + rand(-200, 200);
+          R.zones.push({ kind: 'meteor', w, x, y, r: p.area, life: 0.8, max: 0.8 });
+        }
         break;
       }
     }
-  }
-
-  updateStrikes(dt) {
-    for (const s of this.strikes) {
-      if (s.delay > 0) { s.delay -= dt; continue; }
-      s.timer -= dt;
-      while (s.timer <= 0 && s.left > 0) {
-        s.timer += s.tick;
-        s.left--;
-        const a = rand(0, Math.PI * 2), r = Math.sqrt(Math.random()) * s.w.radius;
-        const x = s.x + Math.cos(a) * r, y = s.y + Math.sin(a) * r;
-        for (const e of this.enemies) {
-          if (!s.w.air && ENEMIES[e.type].flying) continue;
-          if (dist2(e, { x, y }) < 28 * 28) this.damageEnemy(e, s.dmg);
-        }
-        if (s.w.beam) this.effects.push({ kind: 'beam', x1: x, y1: y - 400, x2: x, y2: y, t: 0, life: 0.12, color: s.w.color, w: 3 });
-        this.explosion(x, y, 18, s.w.color);
+  },
+  doSlash(w, o, a) {
+    const R = this.run; const p = w.p;
+    const reach = p.area * 1.6;
+    R.fx.push({ kind: 'slash', x: o.x, y: o.y, a, r: reach, life: 0.18, max: 0.18, color: w.evo ? '#ff6a8a' : '#fff' });
+    Grid.query(o.x, o.y, reach + 30, e => {
+      const dx = e.x - o.x, dy = e.y - o.y; const d = Math.hypot(dx, dy);
+      if (d > reach + e.r) return;
+      let da = Math.atan2(dy, dx) - a; da = Math.atan2(Math.sin(da), Math.cos(da));
+      if (Math.abs(da) < 1.1 || d < 30) this.hit(e, p.dmg, w, 1.2, o);
+    });
+    Sound.sfx('shoot');
+  },
+  tickMinions(w, dt, o) {
+    const R = this.run; const p = w.p;
+    if (!w.st.list) w.st.list = [];
+    const L = w.st.list;
+    while (L.length < p.amount) L.push({ x: o.x + rand(-20, 20), y: o.y + rand(-20, 20), vx: 0, vy: 0, cd: 0, t: null, ph: rand(0, TAU) });
+    L.length = p.amount;
+    for (const m of L) {
+      m.ph += dt * 3;
+      if (!m.t || m.t.dead || dist2(m.x, m.y, o.x, o.y) > 500 * 500) m.t = this.nearest(m.x, m.y, 380);
+      let tx, ty;
+      if (m.t) { tx = m.t.x; ty = m.t.y; } else { tx = o.x + Math.cos(m.ph) * 50; ty = o.y + Math.sin(m.ph) * 50; }
+      const dx = tx - m.x, dy = ty - m.y, d = Math.hypot(dx, dy) || 1;
+      m.vx += (dx / d * p.speed - m.vx) * Math.min(1, dt * 6); m.vy += (dy / d * p.speed - m.vy) * Math.min(1, dt * 6);
+      m.x += m.vx * dt; m.y += m.vy * dt;
+      m.cd -= dt;
+      if (m.cd <= 0) {
+        let did = false;
+        Grid.query(m.x, m.y, p.size + 30, e => { if (dist2(m.x, m.y, e.x, e.y) < (p.size + e.r) ** 2) { this.hit(e, p.dmg, w, 0.4); did = true; } });
+        if (did) m.cd = p.tick;
       }
     }
-    this.strikes = this.strikes.filter(s => s.left > 0);
-  }
+  },
+  tickDrones(w, dt, o) {
+    const R = this.run; const p = w.p;
+    if (!w.st.list) w.st.list = [];
+    const L = w.st.list;
+    while (L.length < p.amount) L.push({ x: o.x, y: o.y, cd: rand(0, p.cd), a: rand(0, TAU) });
+    L.length = p.amount;
+    L.forEach((m, i) => {
+      m.a += dt * 1.5;
+      const a = m.a + i / L.length * TAU;
+      m.x = o.x + Math.cos(a) * p.radius; m.y = o.y + Math.sin(a) * p.radius * 0.7 - 10;
+      m.cd -= dt;
+      if (m.cd <= 0) {
+        const t = this.nearest(m.x, m.y, 450);
+        if (t) {
+          m.cd = p.cd;
+          const aa = Math.atan2(t.y - m.y, t.x - m.x);
+          R.projs.push({ kind: 'bolt', w, x: m.x, y: m.y, vx: Math.cos(aa) * p.speed, vy: Math.sin(aa) * p.speed, r: p.size, life: 1.2, pierce: p.pierce || 1, hit: {} });
+        }
+      }
+    });
+  },
+  tickOrbit(w, dt, o) {
+    const p = w.p;
+    w.st.a = (w.st.a || 0) + dt * p.spin;
+    if (w.st.on === undefined) { w.st.on = true; w.st.t = p.dur; }
+    w.st.t -= dt;
+    if (w.st.t <= 0) { w.st.on = !w.st.on; w.st.t = w.st.on ? p.dur : p.cd; }
+    if (!w.st.on) return;
+    for (let i = 0; i < p.amount; i++) {
+      const a = w.st.a + i / p.amount * TAU;
+      const x = o.x + Math.cos(a) * p.radius, y = o.y + Math.sin(a) * p.radius;
+      Grid.query(x, y, p.size + 30, e => {
+        if (dist2(x, y, e.x, e.y) < (p.size + e.r) ** 2 && (e.lh[w.uid] || 0) <= this.run.t) { e.lh[w.uid] = this.run.t + 0.35; this.hit(e, p.dmg, w, 1, o); }
+      });
+    }
+  },
 
-  updateProjectiles(dt) {
-    for (const p of this.projectiles) {
-      if (p.enemy) {
-        if (!p.target || p.target.downed) { p.dead = true; continue; }
-        const dx = p.target.x - p.x, dy = p.target.y - p.y, l = Math.hypot(dx, dy);
-        if (l < 8) { p.dead = true; this.damageUnit(p.target, p.dmg, null); continue; }
-        p.x += dx / l * p.speed * dt; p.y += dy / l * p.speed * dt;
+  updateProjs(dt) {
+    const R = this.run; const P = R.projs;
+    for (let i = P.length - 1; i >= 0; i--) {
+      const b = P[i];
+      b.life -= dt;
+      if (b.kind === 'homing') {
+        if (!b.target || b.target.dead) b.target = this.nearest(b.x, b.y, 400);
+        if (b.target) {
+          const sp = Math.hypot(b.vx, b.vy);
+          const a0 = Math.atan2(b.vy, b.vx), a1 = Math.atan2(b.target.y - b.y, b.target.x - b.x);
+          let da = Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0));
+          const a = a0 + clamp(da, -6 * dt, 6 * dt);
+          b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
+        }
+      } else if (b.kind === 'boomerang') {
+        b.t += dt; b.rot += dt * 18;
+        const o = this.ownerPos(b.w);
+        if (b.t > b.w.p.dur * 0.5) {
+          const dx = o.x - b.x, dy = o.y - b.y, d = Math.hypot(dx, dy) || 1;
+          const sp = b.w.p.speed * 1.1;
+          b.vx += (dx / d * sp - b.vx) * Math.min(1, dt * 5); b.vy += (dy / d * sp - b.vy) * Math.min(1, dt * 5);
+          if (d < 20 && b.t > b.w.p.dur * 0.6) b.life = 0;
+        }
+      } else if (b.kind === 'lob') {
+        b.t += dt;
+        const k = b.t / 0.55;
+        b.x = b.sx + (b.tx - b.sx) * k; b.y = b.sy + (b.ty - b.sy) * k - Math.sin(k * Math.PI) * 60;
+        if (b.life <= 0) {
+          const p = b.w.p;
+          R.fx.push({ kind: 'ring', x: b.tx, y: b.ty, r: p.area, life: 0.3, max: 0.3, color: '#ff8a3c' });
+          Grid.query(b.tx, b.ty, p.area + 30, e => { if (dist2(b.tx, b.ty, e.x, e.y) < (p.area + e.r) ** 2) this.hit(e, p.dmg, b.w, 0.8); });
+          R.zones.push({ kind: 'burn', w: b.w, x: b.tx, y: b.ty, r: p.area * 0.9, life: p.dur, max: p.dur, tick: 0 });
+          Sound.sfx('boom');
+          P.splice(i, 1);
+        }
         continue;
       }
-      p.life -= dt;
-      if (p.homing) {
-        if (!p.target || p.target.dead) p.target = this.findTarget({ x: p.x, y: p.y }, 300, p.air);
-        if (p.target) {
-          const want = Math.atan2(p.target.y - p.y, p.target.x - p.x);
-          const cur = Math.atan2(p.vy, p.vx);
-          let da = want - cur;
-          while (da > Math.PI) da -= Math.PI * 2;
-          while (da < -Math.PI) da += Math.PI * 2;
-          const na = cur + clamp(da, -8 * dt, 8 * dt);
-          p.vx = Math.cos(na) * p.speed; p.vy = Math.sin(na) * p.speed;
-        }
-      }
-      p.x += p.vx * dt; p.y += p.vy * dt;
-      let hit = p.life <= 0;
-      if (!p.homing && dist2(p, { x: p.tx, y: p.ty }) < 10 * 10) hit = true;
-      for (const e of this.enemies) {
-        if (!p.air && ENEMIES[e.type].flying) continue;
-        if (dist2(p, e) < (ENEMIES[e.type].size + 3) ** 2) { hit = true; break; }
-      }
-      if (p.x < -50 || p.y < -50 || p.x > W + 50 || p.y > H + 50) { p.dead = true; continue; }
-      if (hit) {
-        p.dead = true;
-        for (const e of this.enemies) {
-          if (!p.air && ENEMIES[e.type].flying) continue;
-          if (dist2(p, e) < (p.splash + ENEMIES[e.type].size) ** 2) this.damageEnemy(e, p.dmg);
-        }
-        this.explosion(p.x, p.y, p.splash, p.color);
-      }
-    }
-    this.projectiles = this.projectiles.filter(p => !p.dead);
-  }
-
-  damageEnemy(e, dmg) {
-    if (e.dead) return;
-    e.hp -= dmg;
-    e.hitFlash = 0.05;
-    if (e.hp <= 0) this.killEnemy(e);
-  }
-
-  killEnemy(e) {
-    const d = ENEMIES[e.type];
-    e.dead = true;
-    this.kills++;
-    this.sp += Math.round(d.reward * this.rewardMul * this.diff.reward);
-    this.gainXp(d.xp);
-    this.burst(e.x, e.y, d.boss ? '#e040fb' : '#8bc34a', d.boss ? 40 : 6);
-    if (d.boss) { this.ui.shake(16); this.ui.radio(`${d.name}を撃破！やったぞ！`); }
-    // アイテム箱
-    const chance = (d.boss ? 1 : 0.06) * this.dropMul;
-    if (Math.random() < chance) {
-      const r = Math.random();
-      this.crates.push({ x: e.x, y: e.y, t: 0, kind: r < 0.5 ? 'armor' : r < 0.85 ? 'weapon' : 'heal', amount: d.boss ? 10 : 1 });
-    }
-  }
-
-  collectCrate(c) {
-    if (c.kind === 'armor') {
-      this.armorGained += c.amount;
-      this.floaters.push({ x: c.x, y: c.y, text: `アーマー+${c.amount}`, color: '#66bb6a', t: 0 });
-    } else if (c.kind === 'weapon') {
-      this.gainXp(3 * c.amount);
-      this.sp += 10 * c.amount;
-      this.floaters.push({ x: c.x, y: c.y, text: `武器箱 +${10 * c.amount}SP`, color: '#ef5350', t: 0 });
-    } else {
-      this.baseHp = Math.min(this.baseMax, this.baseHp + 5 * c.amount);
-      for (const u of this.units) if (!u.downed) u.hp = Math.min(u.maxHp, u.hp + u.maxHp * 0.15);
-      this.floaters.push({ x: c.x, y: c.y, text: '回復', color: '#fff176', t: 0 });
-    }
-  }
-
-  gainXp(n) {
-    this.xp += n;
-    while (this.xp >= this.xpNeed()) {
-      this.xp -= this.xpNeed();
-      this.level++;
-      this.pendingLevels++;
-    }
-    if (this.pendingLevels > 0 && !this.ui.modalOpen) {
-      this.ui.radio(pick(RADIO.levelup));
-      this.openCardChoice(`Lv ${this.level - this.pendingLevels + 1} アップ！強化を選択`);
-    }
-  }
-  xpNeed() { return Math.round(10 + this.level * 7 + Math.pow(this.level, 1.5)); }
-
-  // ---------------- カード ----------------
-  rollCards(count) {
-    const deployed = new Set(this.units.map(u => u.cls));
-    const pool = [];
-    for (const [key, w] of Object.entries(WEAPONS)) {
-      if (w.rarity === 0 || this.weapons[w.cls] === key) continue;
-      pool.push({
-        id: 'w_' + key, kind: 'weapon', rarity: w.rarity, cls: w.cls,
-        name: w.name, weapon: key,
-        desc: `${w.cat}に換装。${w.desc}`,
-        apply: G => {
-          G.weapons[w.cls] = key;
-          for (const u of G.units) if (u.cls === w.cls) { u.cd = 0.3; G.setupWeapon(u); }
-        },
+      b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.life <= 0) { P.splice(i, 1); continue; }
+      let gone = false;
+      Grid.query(b.x, b.y, b.r + 30, e => {
+        if (gone) return false;
+        if (b.hit[e.id] && b.hit[e.id] > R.t) return;
+        if (dist2(b.x, b.y, e.x, e.y) > (b.r + e.r) ** 2) return;
+        b.hit[e.id] = b.kind === 'boomerang' ? R.t + 0.3 : 1e9;
+        this.hit(e, b.w.p.dmg, b.w, 0.6, b);
+        if (b.kind === 'shard' && b.w.p.slow) this.slow(e, b.w.p.slow, 2);
+        if (b.pierce !== undefined && b.kind !== 'boomerang') { b.pierce--; if (b.pierce <= 0) { gone = true; return false; } }
       });
+      if (gone) P.splice(i, 1);
     }
-    for (const c of CARDS) {
-      if (c.once && this.takenCards[c.id]) continue;
-      pool.push(c);
-    }
-    const chosen = [];
-    for (let i = 0; i < count && pool.length; i++) {
-      const weights = pool.map(c => {
-        let wgt = RARITY[c.rarity].weight;
-        if (c.cls && deployed.has(c.cls)) wgt *= 2.2;
-        if (c.cls && !deployed.size) wgt *= 1;
-        if (c.kind === 'supply' && this.sp > 300) wgt *= 0.3;
-        return wgt;
-      });
-      let r = Math.random() * weights.reduce((a, b) => a + b, 0), k = 0;
-      while ((r -= weights[k]) > 0) k++;
-      chosen.push(pool[k]);
-      pool.splice(k, 1);
-    }
-    return chosen;
-  }
-
-  openCardChoice(title) {
-    this.ui.showCards(title, this.rollCards(3), card => {
-      card.apply(this);
-      this.takenCards[card.id] = true;
-      this.history.push(card);
-      this.pendingLevels--;
-      if (card.cls === 'wingdiver' || card.id === 'w_blink') for (const u of this.units) if (u.cls === 'wingdiver') this.setupWeapon(u);
-      if (this.pendingLevels > 0) setTimeout(() => this.openCardChoice(`Lv ${this.level - this.pendingLevels + 1} アップ！強化を選択`), 150);
-    });
-  }
-
-  // ---------------- 終了 ----------------
-  commitMeta() {
-    const s = this.save;
-    s.armor += this.armorGained;
-    const k = this.diff.key;
-    s.best[k] = Math.max(s.best[k] || 0, this.wave);
-    writeSave(s);
-    this.armorGained = 0;
-  }
-  gameOver() {
-    this.state = 'over';
-    const gained = this.armorGained;
-    this.commitMeta();
-    this.ui.showResult(false, gained);
-  }
-  victory() {
-    this.state = 'over';
-    const gained = this.armorGained;
-    this.save.clears[this.diff.key] = (this.save.clears[this.diff.key] || 0) + 1;
-    this.commitMeta();
-    this.ui.showResult(true, gained);
-  }
-  continueEndless() {
-    this.endless = true;
-    this.state = 'play';
-  }
-
-  // ---------------- エフェクト ----------------
-  tracer(x, y, t, color, jitter) {
-    this.effects.push({ kind: 'tracer', x1: x, y1: y, x2: t.x + (jitter ? rand(-jitter, jitter) : 0), y2: t.y + (jitter ? rand(-jitter, jitter) : 0), t: 0, life: 0.06, color });
-  }
-  explosion(x, y, r, color) { this.effects.push({ kind: 'explosion', x, y, r: Math.max(10, r), t: 0, life: 0.35, color }); }
-  burst(x, y, color, n) {
-    for (let i = 0; i < n; i++) {
-      const a = rand(0, Math.PI * 2), s = rand(30, 120);
-      this.effects.push({ kind: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: 0, life: rand(0.3, 0.6), color });
-    }
-  }
-
-  // ---------------- 描画 ----------------
-  render() {
-    const ctx = this.ctx;
-    ctx.save();
-    const sh = this.ui ? this.ui.shakeAmt : 0;
-    if (sh > 0) ctx.translate(rand(-sh, sh), rand(-sh, sh));
-    ctx.clearRect(-20, -20, W + 40, H + 40);
-    if (this.state === 'title') { ctx.restore(); return; }
-    drawBackground(ctx, this);
-    drawBase(ctx, this);
-
-    // 配置プレビュー
-    if (this.placing && this.hover) {
-      const { c, r } = this.hover;
-      const ok = this.tileFree(c, r) && this.sp >= this.deployCost(this.placing);
-      ctx.fillStyle = ok ? 'rgba(102,187,106,0.35)' : 'rgba(239,83,80,0.35)';
-      ctx.fillRect(c * TILE, r * TILE, TILE, TILE);
-      const w = WEAPONS[this.weapons[this.placing]];
-      const range = w.range * (1 + this.mods[this.placing].rangeMul);
-      ctx.strokeStyle = ok ? 'rgba(255,255,255,0.5)' : 'rgba(239,83,80,0.5)';
-      ctx.beginPath(); ctx.arc(c * TILE + TILE / 2, r * TILE + TILE / 2, range, 0, Math.PI * 2); ctx.stroke();
-    }
-
-    for (const c of this.crates) drawCrate(ctx, c);
-    for (const u of this.units) drawUnit(ctx, u, this, u === this.selected);
-    // 地上→飛行の順で描画
-    for (const e of this.enemies) if (!ENEMIES[e.type].flying) drawEnemy(ctx, e, this.time);
-    for (const e of this.enemies) if (ENEMIES[e.type].flying) drawEnemy(ctx, e, this.time);
-
-    for (const p of this.projectiles) {
-      ctx.fillStyle = p.color;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size || 3.5, 0, Math.PI * 2); ctx.fill();
-    }
-    this.drawEffects(ctx);
-    for (const f of this.floaters) {
-      ctx.globalAlpha = 1 - f.t / 0.9;
-      ctx.fillStyle = f.color;
-      ctx.font = 'bold 12px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText(f.text, f.x, f.y);
-      ctx.globalAlpha = 1;
-    }
-    ctx.restore();
-  }
-
-  drawEffects(ctx) {
-    for (const f of this.effects) {
-      const k = 1 - f.t / f.life;
-      ctx.globalAlpha = Math.max(0, k);
-      switch (f.kind) {
-        case 'tracer':
-          ctx.strokeStyle = f.color; ctx.lineWidth = 1.5;
-          ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
-          break;
-        case 'beam':
-          ctx.strokeStyle = f.color; ctx.lineWidth = f.w * k + 1;
-          ctx.shadowColor = f.color; ctx.shadowBlur = 10;
-          ctx.beginPath(); ctx.moveTo(f.x1, f.y1); ctx.lineTo(f.x2, f.y2); ctx.stroke();
-          ctx.shadowBlur = 0;
-          break;
-        case 'bolt': {
-          ctx.strokeStyle = f.color; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(f.x1, f.y1);
-          for (let i = 1; i < 6; i++) {
-            const t = i / 6;
-            ctx.lineTo(f.x1 + (f.x2 - f.x1) * t + rand(-6, 6), f.y1 + (f.y2 - f.y1) * t + rand(-6, 6));
+  },
+  updateZones(dt) {
+    const R = this.run; const Z = R.zones;
+    for (let i = Z.length - 1; i >= 0; i--) {
+      const z = Z[i]; z.life -= dt;
+      const p = z.w ? z.w.p : null;
+      switch (z.kind) {
+        case 'beam': {
+          z.tick -= dt;
+          if (z.tick <= 0) {
+            z.tick = p.tick;
+            const o = z.owner; const cx = Math.cos(z.ang), cy = Math.sin(z.ang);
+            const L = p.length, W = p.width;
+            Grid.query(o.x + cx * L / 2, o.y + cy * L / 2, L / 2 + 40, e => {
+              const dx = e.x - o.x, dy = e.y - o.y; const along = dx * cx + dy * cy;
+              if (along < 0 || along > L) return;
+              const perp = Math.abs(dx * cy - dy * cx);
+              if (perp < W + e.r) this.hit(e, p.dmg, z.w, 0.2, o);
+            });
           }
-          ctx.lineTo(f.x2, f.y2); ctx.stroke();
           break;
         }
-        case 'cone':
-          ctx.fillStyle = f.color;
-          ctx.globalAlpha = 0.25 * k;
-          ctx.beginPath(); ctx.moveTo(f.x, f.y); ctx.arc(f.x, f.y, f.r, f.a - 0.6, f.a + 0.6); ctx.closePath(); ctx.fill();
+        case 'spinbeam': {
+          z.ang += dt * 4.2; z.tick -= dt;
+          if (z.tick <= 0) {
+            z.tick = 0.08; const o = R.player; const cx = Math.cos(z.ang), cy = Math.sin(z.ang); const L = 650;
+            Grid.query(o.x + cx * L / 2, o.y + cy * L / 2, L / 2 + 40, e => {
+              const dx = e.x - o.x, dy = e.y - o.y; const along = dx * cx + dy * cy;
+              if (along < 0 || along > L) return;
+              if (Math.abs(dx * cy - dy * cx) < 40 + e.r) this.hit(e, z.dmg, null, 0.3, o);
+            });
+          }
           break;
-        case 'explosion':
-          ctx.fillStyle = f.color;
-          ctx.globalAlpha = 0.55 * k;
-          ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.5 + (1 - k) * 0.6), 0, Math.PI * 2); ctx.fill();
-          ctx.globalAlpha = 0.8 * k;
-          ctx.fillStyle = '#fff8e1';
-          ctx.beginPath(); ctx.arc(f.x, f.y, f.r * 0.3 * k, 0, Math.PI * 2); ctx.fill();
+        }
+        case 'mine': {
+          z.arm -= dt;
+          if (z.arm <= 0) {
+            let trig = false;
+            Grid.query(z.x, z.y, 40, e => { if (dist2(z.x, z.y, e.x, e.y) < (24 + e.r) ** 2) { trig = true; return false; } });
+            if (trig || z.life <= 0) {
+              R.fx.push({ kind: 'ring', x: z.x, y: z.y, r: p.area, life: 0.3, max: 0.3, color: '#b07cff' });
+              Grid.query(z.x, z.y, p.area + 30, e => { if (dist2(z.x, z.y, e.x, e.y) < (p.area + e.r) ** 2) this.hit(e, p.dmg, z.w, 1); });
+              Sound.sfx('boom'); z.life = 0;
+            }
+          }
           break;
-        case 'spark':
-          ctx.fillStyle = f.color;
-          ctx.fillRect(f.x + f.vx * f.t - 1.5, f.y + f.vy * f.t - 1.5, 3, 3);
+        }
+        case 'tornado': {
+          z.x += z.vx * dt; z.y += z.vy * dt;
+          z.vx += rand(-200, 200) * dt; z.vy += rand(-200, 200) * dt;
+          z.tick -= dt;
+          if (z.tick <= 0) {
+            z.tick = p.tick;
+            Grid.query(z.x, z.y, z.r + 30, e => {
+              if (dist2(z.x, z.y, e.x, e.y) < (z.r + e.r) ** 2) { this.hit(e, p.dmg, z.w, 0); if (!e.boss) { e.x += (z.x - e.x) * 0.2; e.y += (z.y - e.y) * 0.2; } }
+            });
+          }
           break;
-        case 'marker':
-          ctx.strokeStyle = f.color; ctx.lineWidth = 2;
-          ctx.setLineDash([4, 4]);
-          ctx.beginPath(); ctx.arc(f.x, f.y, f.r, 0, Math.PI * 2); ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.fillStyle = '#ff1744';
-          ctx.beginPath(); ctx.arc(f.x, f.y, 4, 0, Math.PI * 2); ctx.fill();
+        }
+        case 'puddle': case 'burn': {
+          z.tick -= dt;
+          if (z.tick <= 0) {
+            z.tick = p.tick || 0.4;
+            Grid.query(z.x, z.y, z.r + 30, e => {
+              if (dist2(z.x, z.y, e.x, e.y) < (z.r + e.r) ** 2) { this.hit(e, z.kind === 'burn' ? p.dmg * 0.25 : p.dmg, z.w, 0); if (z.kind === 'puddle') this.slow(e, 0.3, 0.5); }
+            });
+          }
           break;
-        case 'slash':
-          ctx.strokeStyle = f.color; ctx.lineWidth = 2;
-          ctx.beginPath(); ctx.moveTo(f.x - 8, f.y - 8); ctx.lineTo(f.x + 8, f.y + 8); ctx.stroke();
+        }
+        case 'meteor': {
+          if (z.life <= 0) {
+            R.fx.push({ kind: 'ring', x: z.x, y: z.y, r: z.r, life: 0.4, max: 0.4, color: '#ffb347' });
+            Grid.query(z.x, z.y, z.r + 30, e => { if (dist2(z.x, z.y, e.x, e.y) < (z.r + e.r) ** 2) this.hit(e, p.dmg, z.w, 1.5); });
+            R.shake = Math.max(R.shake, 6); Sound.sfx('boom');
+          }
+          break;
+        }
+      }
+      if (z.life <= 0) Z.splice(i, 1);
+    }
+  },
+
+  slow(e, f, t) { if (e.boss) f *= 0.4; e.slowF = Math.max(e.slowF, f); e.slowT = Math.max(e.slowT, t); },
+
+  // ダメージ処理
+  hit(e, dmg, w, kb, src) {
+    const R = this.run; if (e.dead) return;
+    const elem = w ? w.elem : 'none';
+    let weak = false;
+    if (elem !== 'none' && e.weak === elem) { dmg *= 1.5; weak = true; }
+    const eq = Save.data.equip;
+    let crit = false;
+    for (const s in eq) {
+      const it = eq[s]; if (!it || !it.special) continue;
+      if (it.special === 'double' && Math.random() < 0.1) { dmg *= 2; crit = true; }
+      if (it.special === 'execute' && !e.boss && Math.random() < 0.03) dmg = e.hp + 1;
+    }
+    dmg *= rand(0.92, 1.08);
+    e.hp -= dmg; e.flash = 0.08;
+    R.dmgTotal += dmg;
+    const key = w ? w.uid : 'special';
+    R.dmgBy[key] = (R.dmgBy[key] || 0) + dmg;
+    if (kb && !e.boss && src) {
+      const dx = e.x - src.x, dy = e.y - src.y, d = Math.hypot(dx, dy) || 1;
+      const k = kb * 120 * (1 - (e.kbRes || 0));
+      e.kx += dx / d * k; e.ky += dy / d * k;
+    }
+    if (Save.data.settings.dmgNum && !Save.data.settings.light && R.nums.length < 90)
+      R.nums.push({ x: e.x + rand(-8, 8), y: e.y - e.r, v: dmg, life: 0.6, weak, crit });
+    Sound.sfx('hit');
+    if (e.hp <= 0) this.kill(e);
+  },
+  kill(e) {
+    const R = this.run; if (e.dead) return;
+    e.dead = true;
+    R.kills++;
+    R.killsBy[e.type] = (R.killsBy[e.type] || 0) + 1;
+    R.special = Math.min(100, R.special + (e.boss ? 30 : e.elite ? 10 : 0.45));
+    // 経験値の宝石
+    const gv = e.xp;
+    R.gems.push({ x: e.x, y: e.y, v: gv, big: gv >= 10, pull: false });
+    if (R.gems.length > 500) this.mergeGems();
+    const luck = R.stats.luck;
+    const coinMul = R.stage.coinMul || 1;
+    if (Math.random() < 0.015 * (1 + luck) * coinMul || e.coin) R.drops.push({ kind: 'coin', x: e.x + rand(-6, 6), y: e.y, v: (e.coin || 1) * (e.elite ? 10 : 1) });
+    if (Math.random() < 0.0025 * (1 + luck)) R.drops.push({ kind: 'heal', x: e.x, y: e.y });
+    if (Math.random() < 0.0012 * (1 + luck)) R.drops.push({ kind: 'magnet', x: e.x, y: e.y });
+    for (const s in Save.data.equip) { const it = Save.data.equip[s]; if (it && it.special === 'vamp' && Math.random() < 0.02 && R.challenge !== 'noheal') R.player.hp = Math.min(R.player.maxHp, R.player.hp + 2); }
+    if (e.elite) {
+      R.drops.push({ kind: 'chest', x: e.x, y: e.y });
+      if (Math.random() < (e.boss ? 1 : 0.35)) R.earnedEquip.push(makeEquip(Math.min(5, rollRarity(luck) + (e.boss ? 1 : 0) + (R.hard ? 1 : 0))));
+      R.shake = Math.max(R.shake, e.boss ? 14 : 6);
+      if (e.boss) { R.hitstop = 0.15; R.gold += 50 * coinMul; Sound.playBgm(R.stage.bgm); }
+    }
+    if (e.ai === 'split' && !e.elite) for (let i = 0; i < 3; i++) { const s = this.spawnEnemy('slime', { x: e.x + rand(-15, 15), y: e.y + rand(-15, 15) }); s.hp *= 2; }
+    if (!Save.data.settings.light && R.fx.length < 200) R.fx.push({ kind: 'pop', x: e.x, y: e.y, r: e.r, life: 0.25, max: 0.25, color: e.def.color });
+    if (R.stage.special === 'throne' && e.type === 'void') { Save.data.stats.cleared.throne = true; this.finish(true); }
+  },
+  mergeGems() {
+    const R = this.run; const p = R.player;
+    let sum = 0; const keep = [];
+    for (const g of R.gems) { if (dist2(g.x, g.y, p.x, p.y) > 400 * 400) sum += g.v; else keep.push(g); }
+    R.gems = keep;
+    if (sum > 0) { const a = rand(0, TAU); R.gems.push({ x: p.x + Math.cos(a) * 300, y: p.y + Math.sin(a) * 300, v: sum, big: true, pull: false }); }
+  },
+
+  // ---------- 敵の動き ----------
+  updateEnemies(dt) {
+    const R = this.run; const p = R.player;
+    const tx = p.x, ty = p.y;
+    for (const e of R.enemies) {
+      if (e.dead) continue;
+      if (e.flash > 0) e.flash -= dt;
+      if (e.life) { e.life -= dt; if (e.life <= 0) { e.dead = true; continue; } }
+      // ノックバック
+      e.x += e.kx * dt; e.y += e.ky * dt; e.kx *= 0.85; e.ky *= 0.85;
+      if (e.frozen > 0) { e.frozen -= dt; continue; }
+      let spd = e.spd;
+      if (e.slowT > 0) { e.slowT -= dt; spd *= 1 - e.slowF; if (e.slowT <= 0) e.slowF = 0; }
+      const dx = tx - e.x, dy = ty - e.y; const d = Math.hypot(dx, dy) || 1;
+      let vx = dx / d * spd, vy = dy / d * spd;
+      switch (e.ai) {
+        case 'zigzag': e.ph += dt * 4; vx += -dy / d * Math.sin(e.ph) * spd * 0.8; vy += dx / d * Math.sin(e.ph) * spd * 0.8; break;
+        case 'ranged':
+          if (d < 200) { vx = -vx * 0.6; vy = -vy * 0.6; } else if (d < 260) { vx *= 0.1; vy *= 0.1; }
+          e.atk -= dt;
+          if (e.atk <= 0 && d < 420) { e.atk = 2.6; R.ebullets.push({ x: e.x, y: e.y, vx: dx / d * 170, vy: dy / d * 170, r: 7, dmg: e.dmg, life: 4 }); }
+          break;
+        case 'bomb':
+          if (d < 50 || e.fuse !== undefined) {
+            e.fuse = (e.fuse === undefined ? 0.6 : e.fuse) - dt; vx = vy = 0;
+            if (e.fuse <= 0) {
+              e.dead = true;
+              R.fx.push({ kind: 'ring', x: e.x, y: e.y, r: 70, life: 0.3, max: 0.3, color: '#ff5533' });
+              if (d < 70 + p.r) this.hurt(e.dmg);
+              Sound.sfx('boom'); continue;
+            }
+          }
+          break;
+        case 'flee': vx = -vx * 1.1; vy = -vy * 1.1; break;
+        case 'charge': vx = e.vx; vy = 0; break;
+        case 'boss':
+          e.atk -= dt;
+          if (e.dash > 0) { e.dash -= dt; vx = e.dvx; vy = e.dvy; }
+          else if (e.atk <= 0) {
+            e.atk = rand(3, 5);
+            if (Math.random() < 0.5) {
+              const n = e.type === 'void' ? 24 : 14; const off = rand(0, TAU);
+              for (let i = 0; i < n; i++) { const a = off + i / n * TAU; R.ebullets.push({ x: e.x, y: e.y, vx: Math.cos(a) * 150, vy: Math.sin(a) * 150, r: 9, dmg: e.dmg * 0.6, life: 5 }); }
+            } else { e.dash = 0.7; e.dvx = dx / d * spd * 5; e.dvy = dy / d * spd * 5; }
+          }
           break;
       }
+      e.x += vx * dt; e.y += vy * dt;
+      e.face = vx >= 0 ? 1 : -1;
+      // 遠すぎる敵はプレイヤーの近くに出し直す
+      if (d > 1400 && !e.boss) { const pp = this.spawnPos(); e.x = pp.x; e.y = pp.y; }
+      // 接触ダメージ
+      if (d < e.r + p.r) this.hurt(e.dmg);
     }
-    ctx.globalAlpha = 1;
+    // 敵同士の押し合い（軽め）
+    for (const [, cell] of Grid.map) {
+      const n = Math.min(cell.length, 14);
+      for (let i = 0; i < n; i++) for (let k = i + 1; k < n; k++) {
+        const a = cell[i], b = cell[k]; const dx = b.x - a.x, dy = b.y - a.y; const rr = (a.r + b.r) * 0.8;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < rr * rr && d2 > 0.01) {
+          const d = Math.sqrt(d2); const push = (rr - d) * 0.25 / d;
+          const wa = a.boss ? 0 : 1, wb = b.boss ? 0 : 1;
+          a.x -= dx * push * wa; a.y -= dy * push * wa; b.x += dx * push * wb; b.y += dy * push * wb;
+        }
+      }
+    }
+  },
+  updateEBullets(dt) {
+    const R = this.run; const p = R.player; const B = R.ebullets;
+    for (let i = B.length - 1; i >= 0; i--) {
+      const b = B[i]; b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+      if (dist2(b.x, b.y, p.x, p.y) < (b.r + p.r) ** 2) { this.hurt(b.dmg); b.life = 0; }
+      if (b.life <= 0) B.splice(i, 1);
+    }
+  },
+  hurt(dmg) {
+    const R = this.run; const p = R.player;
+    if (p.invul > 0 || R.over) return;
+    dmg = Math.max(1, dmg - R.stats.armor);
+    p.hp -= dmg; p.invul = 0.5;
+    R.shake = Math.max(R.shake, 5);
+    Sound.sfx('hurt');
+    for (const s in Save.data.equip) {
+      const it = Save.data.equip[s];
+      if (it && it.special === 'nova') {
+        R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 150, life: 0.3, max: 0.3, color: '#ff4f7b' });
+        Grid.query(p.x, p.y, 180, e => { if (dist2(p.x, p.y, e.x, e.y) < 150 * 150) this.hit(e, 30 * (1 + R.stats.might) * (1 + R.player.level * 0.1), null, 1.5, p); });
+      }
+    }
+    if (p.hp <= 0) {
+      if (p.revives > 0) {
+        p.revives--; p.hp = p.maxHp * 0.5; p.invul = 2.5;
+        R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 300, life: 0.6, max: 0.6, color: '#fff3a8' });
+        Grid.query(p.x, p.y, 320, e => { if (!e.boss) { const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy) || 1; e.kx += dx / d * 900; e.ky += dy / d * 900; } });
+        UI.toast('復活！');
+      } else this.finish(false);
+    }
+  },
+
+  // ---------- 拾い物 ----------
+  updatePickups(dt) {
+    const R = this.run; const p = R.player;
+    const mg = p.magnet; const mg2 = mg * mg;
+    const G = R.gems;
+    for (let i = G.length - 1; i >= 0; i--) {
+      const g = G[i];
+      const d2 = dist2(g.x, g.y, p.x, p.y);
+      if (g.pull || d2 < mg2) {
+        g.pull = true;
+        const d = Math.sqrt(d2) || 1; const sp = 420 + (g.big ? 200 : 0);
+        g.x += (p.x - g.x) / d * sp * dt; g.y += (p.y - g.y) / d * sp * dt;
+        if (d < p.r + 6) { this.gainXp(g.v); G.splice(i, 1); Sound.sfx('gem'); }
+      }
+    }
+    const Dr = R.drops;
+    for (let i = Dr.length - 1; i >= 0; i--) {
+      const o = Dr[i]; const d2 = dist2(o.x, o.y, p.x, p.y);
+      if (d2 < (mg * 0.8) ** 2 || o.pull) {
+        o.pull = true; const d = Math.sqrt(d2) || 1;
+        o.x += (p.x - o.x) / d * 380 * dt; o.y += (p.y - o.y) / d * 380 * dt;
+      }
+      if (d2 < (p.r + 12) ** 2) {
+        Dr.splice(i, 1);
+        if (o.kind === 'coin') { R.gold += o.v; Sound.sfx('coin'); }
+        else if (o.kind === 'heal') { if (R.challenge !== 'noheal') p.hp = Math.min(p.maxHp, p.hp + 30 + p.maxHp * 0.2); Sound.sfx('gem'); }
+        else if (o.kind === 'magnet') { R.gems.forEach(g => g.pull = true); Sound.sfx('level'); }
+        else if (o.kind === 'chest') { R.pendingChest++; }
+      }
+    }
+  },
+  gainXp(v) {
+    const R = this.run; const p = R.player;
+    p.xp += v * (1 + R.stats.growth);
+    let need = D.xpNeed(p.level);
+    while (p.xp >= need) {
+      p.xp -= need; p.level++; R.levelQueue++; need = D.xpNeed(p.level);
+      Sound.sfx('level');
+      if (R.sup) R.weapons.filter(w => w.owner === 's').forEach(w => this.calcWeapon(w));
+    }
+  },
+
+  updateFx(dt) {
+    const R = this.run;
+    for (let i = R.fx.length - 1; i >= 0; i--) { R.fx[i].life -= dt; if (R.fx[i].life <= 0) R.fx.splice(i, 1); }
+    for (let i = R.nums.length - 1; i >= 0; i--) { const n = R.nums[i]; n.life -= dt; n.y -= 40 * dt; if (n.life <= 0) R.nums.splice(i, 1); }
+  },
+
+  // ---------- 必殺技 ----------
+  useSpecial() {
+    const R = this.run; if (!R || R.over || R.special < 100 || UI.modalOpen()) return;
+    R.special = 0;
+    const p = R.player; const lv = p.level; const m = 1 + R.stats.might;
+    R.cutin = { t: 1.0, char: R.char };
+    R.shake = 10; Sound.sfx('special');
+    const onScreen = () => this.randomOnScreen(9999);
+    switch (R.char.special) {
+      case 'starburst': {
+        const dmg = (40 + lv * 10) * m;
+        for (const e of onScreen()) { this.hit(e, dmg, { uid: 'special', elem: 'light' }, 1, p); R.fx.push({ kind: 'star', x: e.x, y: e.y, life: 0.4, max: 0.4 }); }
+        break;
+      }
+      case 'issen': {
+        const dmg = (80 + lv * 16) * m;
+        R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 320, life: 0.4, max: 0.4, color: '#ff5d5d' });
+        Grid.query(p.x, p.y, 340, e => { if (dist2(p.x, p.y, e.x, e.y) < 320 * 320) this.hit(e, dmg, { uid: 'special', elem: 'none' }, 2, p); });
+        break;
+      }
+      case 'overdrive': R.zones.push({ kind: 'spinbeam', ang: Math.atan2(p.fy, p.fx), life: 1.6, max: 1.6, tick: 0, dmg: (25 + lv * 5) * m }); break;
+      case 'arrowrain': R.rainT = 10; R.rainDmg = (14 + lv * 3) * m; break;
+      case 'freeze': {
+        const dmg = (15 + lv * 4) * m;
+        for (const e of onScreen()) { e.frozen = e.boss ? 2 : 6; this.hit(e, dmg, { uid: 'special', elem: 'ice' }, 0, p); }
+        break;
+      }
+      case 'kitsune': {
+        if (R.challenge !== 'noheal') p.hp = Math.min(p.maxHp, p.hp + p.maxHp * 0.5);
+        const dmg = (30 + lv * 7) * m;
+        for (const e of onScreen()) { this.hit(e, dmg, { uid: 'special', elem: 'fire' }, 1, p); R.zones.push({ kind: 'burn', w: { p: { dmg: dmg * 0.5, tick: 0.5 }, uid: 'special', elem: 'fire' }, x: e.x, y: e.y, r: 30, life: 2, max: 2, tick: 0 }); }
+        break;
+      }
+    }
+  },
+  updateSpecial(dt) {
+    const R = this.run;
+    if (R.rainT > 0) {
+      R.rainT -= dt;
+      R.rainAcc = (R.rainAcc || 0) + dt;
+      while (R.rainAcc > 0.06) {
+        R.rainAcc -= 0.06;
+        const t = this.randomOnScreen(1)[0];
+        if (t) { this.hit(t, R.rainDmg, { uid: 'special', elem: 'none' }, 0.3, R.player); R.fx.push({ kind: 'arrowfx', x: t.x, y: t.y, life: 0.2, max: 0.2 }); }
+      }
+    }
+  },
+
+  // ---------- レベルアップの選択肢 ----------
+  ownedPlayerWeapons() { return this.run.weapons.filter(w => w.owner === 'p'); },
+  buildChoices(n) {
+    const R = this.run; const owned = this.ownedPlayerWeapons();
+    const pool = [];
+    for (const w of owned) if (!w.evo && w.level < D.WEAPON_MAX && !R.banished.includes(w.id)) pool.push({ kind: 'wup', id: w.id, w, weight: 3 });
+    const ownedIds = owned.map(w => w.id).concat(owned.filter(w => w.evo && w.evo.startsWith('fus_')).flatMap(w => D.FUSIONS.find(f => f.id === w.evo).from));
+    if (owned.length < 6 && R.challenge !== 'oneweapon')
+      for (const id of Save.data.unlockedWeapons) if (!ownedIds.includes(id) && !R.banished.includes(id)) pool.push({ kind: 'wnew', id, weight: 2 });
+    const pIds = Object.keys(R.passives);
+    for (const id of pIds) { const mx = D.PASSIVES[id].max || D.PASSIVE_MAX; if (R.passives[id] < mx && !R.banished.includes(id)) pool.push({ kind: 'pup', id, weight: 2 }); }
+    if (pIds.length < 6 && R.challenge !== 'nopassive')
+      for (const id in D.PASSIVES) if (!pIds.includes(id) && !R.banished.includes(id)) pool.push({ kind: 'pnew', id, weight: 1.5 });
+    const out = [];
+    while (out.length < n && pool.length) {
+      const tot = pool.reduce((a, c) => a + c.weight, 0); let r = Math.random() * tot; let idx = 0;
+      for (; idx < pool.length - 1; idx++) { r -= pool[idx].weight; if (r <= 0) break; }
+      const c = pool.splice(idx, 1)[0];
+      if (c.kind === 'wnew') c.rare = Math.random() < 0.08 * (1 + R.stats.luck);
+      out.push(c);
+    }
+    if (!out.length) { out.push({ kind: 'heal' }); out.push({ kind: 'gold' }); }
+    return out;
+  },
+  applyChoice(c) {
+    const R = this.run;
+    if (c.kind === 'wup') { c.w.level++; this.calcWeapon(c.w); }
+    else if (c.kind === 'wnew') this.addWeapon(c.id, 'p', c.rare);
+    else if (c.kind === 'pup' || c.kind === 'pnew') { R.passives[c.id] = (R.passives[c.id] || 0) + 1; this.recalc(); }
+    else if (c.kind === 'heal') { if (R.challenge !== 'noheal') R.player.hp = Math.min(R.player.maxHp, R.player.hp + 40); }
+    else if (c.kind === 'gold') R.gold += 25;
+  },
+
+  // ---------- 宝箱・進化 ----------
+  availableEvolutions() {
+    const R = this.run; const owned = this.ownedPlayerWeapons(); const res = [];
+    for (const f of D.FUSIONS) {
+      const a = owned.find(w => w.id === f.from[0] && !w.evo && w.level >= D.WEAPON_MAX);
+      const b = owned.find(w => w.id === f.from[1] && !w.evo && w.level >= D.WEAPON_MAX);
+      if (a && b) res.push({ fusion: f, a, b });
+    }
+    for (const ev of D.EVOLUTIONS) {
+      const w = owned.find(x => x.id === ev.from && !x.evo && x.level >= D.WEAPON_MAX);
+      if (w && R.passives[ev.passive]) res.push({ evo: ev, w });
+    }
+    return res;
+  },
+  openChest() {
+    const R = this.run; const luck = R.stats.luck;
+    Sound.sfx('chest');
+    const evs = this.availableEvolutions();
+    const results = [];
+    let coins = Math.floor(rand(10, 30) * (R.stage.coinMul || 1));
+    R.gold += coins;
+    if (evs.length) {
+      const e = evs[0];
+      if (e.fusion) {
+        R.weapons = R.weapons.filter(w => w !== e.b);
+        this.makeEvolved(e.a, e.fusion.id); e.a.id = e.fusion.id;
+        Save.data.stats.recipes[e.fusion.id] = true;
+        results.push({ text: `融合進化！ ${e.fusion.name}`, evo: true });
+      } else {
+        this.makeEvolved(e.w, e.evo.id);
+        Save.data.stats.recipes[e.evo.id] = true;
+        results.push({ text: `進化！ ${e.evo.name}`, evo: true });
+      }
+      Sound.sfx('evolve');
+    } else {
+      const r = Math.random();
+      const n = r < 0.05 * (1 + luck) ? 5 : r < 0.3 * (1 + luck * 0.5) ? 3 : 1;
+      for (let i = 0; i < n; i++) {
+        const c = this.buildChoices(1).filter(x => x.kind !== 'wnew' && x.kind !== 'pnew')[0] || { kind: 'gold' };
+        this.applyChoice(c);
+        results.push({ text: UI.choiceLabel(c) });
+      }
+    }
+    results.push({ text: `コイン +${coins}` });
+    UI.showChest(results);
+  },
+
+  // ---------- 終了 ----------
+  finish(win) {
+    const R = this.run; if (R.over) return;
+    R.over = true; R.cleared = win;
+    Sound.stopBgm(); Sound.sfx(win ? 'clear' : 'over');
+    Save.clearRun();
+    const sv = Save.data; const st = sv.stats; const s = R.stats;
+    let mul = (1 + s.greed) * (1 + R.curse * 0.2) * (R.hard ? 2 : 1);
+    if (R.challenge && win) mul *= 1 + D.CHALLENGES.find(c => c.id === R.challenge).reward;
+    if (!win) mul *= 0.7;
+    const coins = Math.floor((R.gold + R.kills * 0.08 + R.t * 0.3) * mul);
+    sv.coins += coins; st.coinsTotal += coins;
+    st.kills += R.kills;
+    for (const k in R.killsBy) st.enemyKills[k] = (st.enemyKills[k] || 0) + R.killsBy[k];
+    st.bestLevel = Math.max(st.bestLevel, R.player.level);
+    st.bestDamage = Math.max(st.bestDamage, R.dmgTotal);
+    const sid = R.stage.id;
+    if (win) {
+      if (!R.hard) st.cleared[sid] = true; else { st.clearedHard[sid] = true; st.cleared[sid] = true; st.hardCurse[sid] = Math.max(st.hardCurse[sid] || 0, R.curse); }
+      st.bestCurse = Math.max(st.bestCurse, R.curse);
+      if (R.challenge) st.challengeClear[R.challenge] = true;
+      if (['forest', 'snow', 'ruins', 'desert', 'station'].every(k => (st.hardCurse[k] || 0) >= 10 && st.clearedHard[k])) st.finalTitle = true;
+    }
+    if (sid === 'abyss') st.abyssBest = Math.max(st.abyssBest, R.floor);
+    // ベスト記録
+    const bk = `${sid}${R.hard ? '_hard' : ''}_${R.char.id}`;
+    const b = st.best[bk] || { time: 0, kills: 0, level: 0, clears: 0, fastest: 0 };
+    b.time = Math.max(b.time, Math.floor(R.t)); b.kills = Math.max(b.kills, R.kills); b.level = Math.max(b.level, R.player.level);
+    if (win) { b.clears++; if (!b.fastest || R.t < b.fastest) b.fastest = Math.floor(R.t); }
+    st.best[bk] = b;
+    // キャラ経験値
+    const cs = sv.chars[R.char.id] || (sv.chars[R.char.id] = { lv: 1, xp: 0, skin: 'default', skins: ['default'] });
+    const cxp = Math.floor(R.kills * 0.5 + R.t * 2 + (win ? 300 : 0));
+    cs.xp += cxp;
+    let lvUp = 0;
+    while (cs.lv < D.CHAR_LV_MAX && cs.xp >= D.charXpNeed(cs.lv)) { cs.xp -= D.charXpNeed(cs.lv); cs.lv++; lvUp++; }
+    st.bestCharLv = Math.max(st.bestCharLv, cs.lv);
+    // 装備
+    for (const it of R.earnedEquip) { sv.inventory.push(it); st.bestRarity = Math.max(st.bestRarity, it.rarity); }
+    const newAch = checkAchievements();
+    Save.write();
+    setTimeout(() => UI.showResult({ win, coins, cxp, lvUp, charLv: cs.lv, newAch, equips: R.earnedEquip }), 700);
+  },
+};
+
+// 実績チェック（報酬を付与して、新しく達成したものを返す）
+function checkAchievements() {
+  const sv = Save.data; const st = sv.stats; const got = [];
+  st.charsUnlocked = sv.unlockedChars.length;
+  for (let loop = 0; loop < 3; loop++) {
+    for (const a of D.ACHIEVEMENTS) {
+      if (sv.achievements[a.id]) continue;
+      let ok = false; try { ok = a.check(st); } catch (e) { ok = false; }
+      if (!ok) continue;
+      sv.achievements[a.id] = Date.now();
+      const r = a.reward; let txt = '';
+      if (r.coins) { sv.coins += r.coins; txt = `コイン +${r.coins}`; }
+      if (r.weapon && !sv.unlockedWeapons.includes(r.weapon)) { sv.unlockedWeapons.push(r.weapon); txt = `新武器「${D.WEAPONS[r.weapon].name}」解放`; }
+      if (r.char && !sv.unlockedChars.includes(r.char)) { sv.unlockedChars.push(r.char); txt = `新キャラ「${D.CHARS.find(c => c.id === r.char).name}」解放`; }
+      if (r.title && !sv.titles.includes(r.title)) { sv.titles.push(r.title); txt = `称号「${r.title}」`; }
+      got.push({ name: a.name, reward: txt });
+      st.charsUnlocked = sv.unlockedChars.length;
+    }
   }
+  return got;
 }
