@@ -182,6 +182,10 @@ def postprocess(data, asset):
         img = remove_white_bg(img)
         s = asset.get("size") or 128
         img = img.resize((s, s), Image.LANCZOS)
+    elif kind == "fx":
+        # 黒背景のまま（ゲーム側で加算合成して黒を消す）
+        s = asset.get("size") or 256
+        img = img.convert("RGB").resize((s, s), Image.LANCZOS)
     elif kind == "tile":
         img = img.convert("RGB").resize((512, 512), Image.LANCZOS)
     elif kind == "background":
@@ -206,7 +210,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1:8188")
     ap.add_argument("--ckpt", default="WAI-Nsfw-Illustrious-17.safetensors", help="使用するチェックポイント名")
     ap.add_argument("--only", help="生成するキー (カンマ区切り)")
-    ap.add_argument("--kind", choices=["sprite", "portrait", "tile", "background", "illustration", "icon"])
+    ap.add_argument("--kind", choices=["sprite", "portrait", "fx", "tile", "background", "illustration", "icon"])
     ap.add_argument("--overwrite", action="store_true", help="既存の画像も作り直す")
     ap.add_argument("--steps", type=int, default=30)
     ap.add_argument("--cfg", type=float, default=7.0)
@@ -240,6 +244,8 @@ def main():
         parts = [m["style"], a["prompt"]]
         if a.get("kind") in ("sprite", "portrait"):
             parts.append(m["sprite_suffix"])
+        elif a.get("kind") == "fx":
+            parts.append(m.get("fx_suffix", ""))
         positive = ", ".join(parts)
         seed = args.seed if args.seed is not None else random.randint(0, 2**32 - 1)
         ref = find_ref(a["key"])

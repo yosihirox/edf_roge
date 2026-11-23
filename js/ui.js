@@ -252,7 +252,7 @@ const UI = {
       <div class="row">
         <button data-act="toggleRun" data-v="dmgNum">ダメージ数字 ${st.dmgNum ? 'ON' : 'OFF'}</button>
         <button data-act="toggleRun" data-v="light">軽量モード ${st.light ? 'ON' : 'OFF'}</button>
-        <button data-act="toggleRun" data-v="shake">画面揺れ ${st.shake ? 'ON' : 'OFF'}</button>
+        <button data-act="toggleRun" data-v="shake">揺れ・フラッシュ ${st.shake ? 'ON' : 'OFF'}</button>
       </div>
       <button class="primary" data-act="resume">再開</button>
       <div class="row"><button data-act="suspend">中断して拠点へ（あとで再開）</button><button data-act="quit" class="danger">あきらめる</button></div>`);
@@ -584,7 +584,7 @@ const UI = {
     const tg = (k, n) => `<button data-act="toggle" data-v="${k}" class="${st[k] ? 'on' : ''}">${n} ${st[k] ? 'ON' : 'OFF'}</button>`;
     const vol = (k, n) => `<div class="row">${n} <button data-act="vol" data-v="${k}" data-d="-0.1">−</button><b>${Math.round(st[k] * 100)}%</b><button data-act="vol" data-v="${k}" data-d="0.1">＋</button></div>`;
     this.show(`${this.header('設定')}
-      <div class="box">${tg('dmgNum', 'ダメージ数字')} ${tg('light', '軽量モード')} ${tg('shake', '画面揺れ')}
+      <div class="box">${tg('dmgNum', 'ダメージ数字')} ${tg('light', '軽量モード')} ${tg('shake', '揺れ・フラッシュ')}
       ${vol('bgm', 'BGM')}${vol('sfx', '効果音')}</div>
       <h3>セーブデータ</h3>
       <div class="box"><p class="note">機種変更やバックアップ用に、ファイルで書き出し・読み込みができます。</p>

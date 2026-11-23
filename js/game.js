@@ -63,7 +63,7 @@ const Game = {
       kills: 0, gold: 0, dmgTotal: 0, dmgBy: {}, special: 0, specialT: 0,
       spawnAcc: 0, nextElite: 150, nextRush: 200, bossSpawned: false, bossIds: [], bossQueue: null,
       levelQueue: 0, pendingChest: 0, earnedEquip: [], hitstop: 0, shake: 0, cutin: null,
-      floor: 1, cleared: false, killsBy: {}, rainT: 0, spinBeam: null,
+      floor: 1, cleared: false, killsBy: {}, rainT: 0, spinBeam: null, parts: [], flash: null,
     };
     if (R.support) R.sup = { x: -30, y: 20, r: 14 };
     this.recalc();
@@ -398,7 +398,7 @@ const Game = {
       case 'strike': {
         const ts = this.randomOnScreen(p.amount);
         for (const t of ts) {
-          R.fx.push({ kind: 'bolt', x: t.x, y: t.y, life: 0.25, max: 0.25, color: D.ELEM[w.elem].color });
+          R.fx.push({ kind: 'bolt', x: t.x, y: t.y, life: 0.3, max: 0.3, color: D.ELEM[w.elem].color, r: p.area }); this.spark(t.x, t.y, D.ELEM[w.elem].color, 8, 220, 3, 0.4); R.shake = Math.max(R.shake, 2);
           Grid.query(t.x, t.y, p.area + 30, e => { if (dist2(t.x, t.y, e.x, e.y) < (p.area + e.r) ** 2) { this.hit(e, p.dmg, w, 0.5); if (p.slow) this.slow(e, p.slow, 2); } });
         }
         if (ts.length) Sound.sfx('hit'); break;
@@ -548,7 +548,7 @@ const Game = {
         b.x = b.sx + (b.tx - b.sx) * k; b.y = b.sy + (b.ty - b.sy) * k - Math.sin(k * Math.PI) * 60;
         if (b.life <= 0) {
           const p = b.w.p;
-          R.fx.push({ kind: 'ring', x: b.tx, y: b.ty, r: p.area, life: 0.3, max: 0.3, color: '#ff8a3c' });
+          this.boom(b.tx, b.ty, p.area, '#ff8a3c', 'fx_explosion');
           Grid.query(b.tx, b.ty, p.area + 30, e => { if (dist2(b.tx, b.ty, e.x, e.y) < (p.area + e.r) ** 2) this.hit(e, p.dmg, b.w, 0.8); });
           R.zones.push({ kind: 'burn', w: b.w, x: b.tx, y: b.ty, r: p.area * 0.9, life: p.dur, max: p.dur, tick: 0 });
           Sound.sfx('boom');
@@ -557,6 +557,7 @@ const Game = {
         continue;
       }
       b.x += b.vx * dt; b.y += b.vy * dt;
+      if (R.parts.length < 700 && !Save.data.settings.light && Math.random() < 0.5) R.parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, life: 0.22, max: 0.22, size: Math.max(2, b.r * 0.5), color: D.ELEM[b.w.elem].color });
       if (b.life <= 0) { P.splice(i, 1); continue; }
       let gone = false;
       Grid.query(b.x, b.y, b.r + 30, e => {
@@ -610,7 +611,7 @@ const Game = {
             let trig = false;
             Grid.query(z.x, z.y, 40, e => { if (dist2(z.x, z.y, e.x, e.y) < (24 + e.r) ** 2) { trig = true; return false; } });
             if (trig || z.life <= 0) {
-              R.fx.push({ kind: 'ring', x: z.x, y: z.y, r: p.area, life: 0.3, max: 0.3, color: '#b07cff' });
+              this.boom(z.x, z.y, p.area, '#b07cff', 'fx_burst');
               Grid.query(z.x, z.y, p.area + 30, e => { if (dist2(z.x, z.y, e.x, e.y) < (p.area + e.r) ** 2) this.hit(e, p.dmg, z.w, 1); });
               Sound.sfx('boom'); z.life = 0;
             }
@@ -641,7 +642,7 @@ const Game = {
         }
         case 'meteor': {
           if (z.life <= 0) {
-            R.fx.push({ kind: 'ring', x: z.x, y: z.y, r: z.r, life: 0.4, max: 0.4, color: '#ffb347' });
+            this.boom(z.x, z.y, z.r, '#ffb347', 'fx_explosion', 1.4); R.flash = { a: 0.25, c: '255,180,80' };
             Grid.query(z.x, z.y, z.r + 30, e => { if (dist2(z.x, z.y, e.x, e.y) < (z.r + e.r) ** 2) this.hit(e, p.dmg, z.w, 1.5); });
             R.shake = Math.max(R.shake, 6); Sound.sfx('boom');
           }
@@ -652,6 +653,23 @@ const Game = {
     }
   },
 
+  // 演出：火花の粒
+  spark(x, y, color, n, spd, size, life) {
+    const R = this.run; if (Save.data.settings.light) n = Math.min(n, 2);
+    const cap = Save.data.settings.light ? 120 : 900;
+    for (let i = 0; i < n && R.parts.length < cap; i++) {
+      const a = Math.random() * TAU, v = spd * (0.3 + Math.random() * 0.7);
+      R.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life: life * (0.5 + Math.random() * 0.5), max: life, size: size * (0.6 + Math.random() * 0.8), color });
+    }
+  },
+  // 演出：爆発（衝撃波＋画像＋火花＋揺れ）
+  boom(x, y, r, color, img, scale = 1) {
+    const R = this.run;
+    R.fx.push({ kind: 'ring', x, y, r, life: 0.35, max: 0.35, color });
+    if (img) R.fx.push({ kind: 'spr', img, x, y, s: r * 2.2 * scale, life: 0.45, max: 0.45, rot: Math.random() * TAU, grow: true });
+    this.spark(x, y, color, Math.round(12 * scale), 260 * scale, 4, 0.6);
+    R.shake = Math.max(R.shake, 3 * scale);
+  },
   slow(e, f, t) { if (e.boss) f *= 0.4; e.slowF = Math.max(e.slowF, f); e.slowT = Math.max(e.slowT, t); },
 
   // ダメージ処理
@@ -679,6 +697,8 @@ const Game = {
     }
     if (Save.data.settings.dmgNum && !Save.data.settings.light && R.nums.length < 90)
       R.nums.push({ x: e.x + rand(-8, 8), y: e.y - e.r, v: dmg, life: 0.6, weak, crit });
+    if (Math.random() < 0.35) this.spark(e.x, e.y, D.ELEM[elem] ? D.ELEM[elem].color : '#fff', 2, 140, 2, 0.25);
+    if (weak || crit || dmg > e.maxHp * 0.3) R.fx.push({ kind: 'hit', x: e.x, y: e.y, life: 0.15, max: 0.15, s: e.r * 2.2 });
     Sound.sfx('hit');
     if (e.hp <= 0) this.kill(e);
   },
@@ -705,7 +725,9 @@ const Game = {
       if (e.boss) { R.hitstop = 0.15; R.gold += 50 * coinMul; Sound.playBgm(R.stage.bgm); }
     }
     if (e.ai === 'split' && !e.elite) for (let i = 0; i < 3; i++) { const s = this.spawnEnemy('slime', { x: e.x + rand(-15, 15), y: e.y + rand(-15, 15) }); s.hp *= 2; }
-    if (!Save.data.settings.light && R.fx.length < 200) R.fx.push({ kind: 'pop', x: e.x, y: e.y, r: e.r, life: 0.25, max: 0.25, color: e.def.color });
+    this.spark(e.x, e.y, e.def.color, e.elite ? 30 : 5, e.elite ? 320 : 160, e.elite ? 5 : 3, 0.45);
+    if (R.fx.length < 160) R.fx.push({ kind: 'pop', x: e.x, y: e.y, r: e.r, life: 0.22, max: 0.22, color: e.def.color });
+    if (e.elite) { this.boom(e.x, e.y, e.r * 2.5, '#ffd84a', 'fx_explosion', e.boss ? 2.5 : 1.5); R.flash = { a: e.boss ? 0.7 : 0.3, c: '255,240,200' }; }
     if (R.stage.special === 'throne' && e.type === 'void') { Save.data.stats.cleared.throne = true; this.finish(true); }
   },
   mergeGems() {
@@ -743,7 +765,7 @@ const Game = {
             e.fuse = (e.fuse === undefined ? 0.6 : e.fuse) - dt; vx = vy = 0;
             if (e.fuse <= 0) {
               e.dead = true;
-              R.fx.push({ kind: 'ring', x: e.x, y: e.y, r: 70, life: 0.3, max: 0.3, color: '#ff5533' });
+              this.boom(e.x, e.y, 70, '#ff5533', 'fx_explosion');
               if (d < 70 + p.r) this.hurt(e.dmg);
               Sound.sfx('boom'); continue;
             }
@@ -802,14 +824,14 @@ const Game = {
     for (const s in Save.data.equip) {
       const it = Save.data.equip[s];
       if (it && it.special === 'nova') {
-        R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 150, life: 0.3, max: 0.3, color: '#ff4f7b' });
+        this.boom(p.x, p.y, 150, '#ff4f7b', 'fx_burst');
         Grid.query(p.x, p.y, 180, e => { if (dist2(p.x, p.y, e.x, e.y) < 150 * 150) this.hit(e, 30 * (1 + R.stats.might) * (1 + R.player.level * 0.1), null, 1.5, p); });
       }
     }
     if (p.hp <= 0) {
       if (p.revives > 0) {
         p.revives--; p.hp = p.maxHp * 0.5; p.invul = 2.5;
-        R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 300, life: 0.6, max: 0.6, color: '#fff3a8' });
+        this.boom(p.x, p.y, 300, '#fff3a8', 'fx_burst', 2); R.flash = { a: 0.6, c: '255,250,220' };
         Grid.query(p.x, p.y, 320, e => { if (!e.boss) { const dx = e.x - p.x, dy = e.y - p.y, d = Math.hypot(dx, dy) || 1; e.kx += dx / d * 900; e.ky += dy / d * 900; } });
         UI.toast('復活！');
       } else this.finish(false);
@@ -853,6 +875,7 @@ const Game = {
     let need = D.xpNeed(p.level);
     while (p.xp >= need) {
       p.xp -= need; p.level++; R.levelQueue++; need = D.xpNeed(p.level);
+      R.fx.push({ kind: 'levelup', x: p.x, y: p.y, life: 0.9, max: 0.9 }); this.spark(p.x, p.y, '#fff3a8', 40, 380, 4, 0.8); R.flash = { a: 0.35, c: '255,255,230' };
       Sound.sfx('level');
       if (R.sup) R.weapons.filter(w => w.owner === 's').forEach(w => this.calcWeapon(w));
     }
@@ -860,6 +883,9 @@ const Game = {
 
   updateFx(dt) {
     const R = this.run;
+    const P = R.parts;
+    for (let i = P.length - 1; i >= 0; i--) { const q = P[i]; q.life -= dt; q.x += q.vx * dt; q.y += q.vy * dt; q.vx *= 0.92; q.vy *= 0.92; if (q.life <= 0) { P[i] = P[P.length - 1]; P.pop(); } }
+    if (R.flash) { R.flash.a -= dt * 2.5; if (R.flash.a <= 0) R.flash = null; }
     for (let i = R.fx.length - 1; i >= 0; i--) { R.fx[i].life -= dt; if (R.fx[i].life <= 0) R.fx.splice(i, 1); }
     for (let i = R.nums.length - 1; i >= 0; i--) { const n = R.nums[i]; n.life -= dt; n.y -= 40 * dt; if (n.life <= 0) R.nums.splice(i, 1); }
   },
@@ -870,7 +896,7 @@ const Game = {
     R.special = 0;
     const p = R.player; const lv = p.level; const m = 1 + R.stats.might;
     R.cutin = { t: 1.0, char: R.char };
-    R.shake = 10; Sound.sfx('special');
+    R.shake = 14; Sound.sfx('special'); R.flash = { a: 0.8, c: '255,255,255' }; R.fx.push({ kind: 'levelup', x: p.x, y: p.y, life: 1.2, max: 1.2, big: true });
     const onScreen = () => this.randomOnScreen(9999);
     switch (R.char.special) {
       case 'starburst': {
@@ -880,7 +906,7 @@ const Game = {
       }
       case 'issen': {
         const dmg = (80 + lv * 16) * m;
-        R.fx.push({ kind: 'ring', x: p.x, y: p.y, r: 320, life: 0.4, max: 0.4, color: '#ff5d5d' });
+        this.boom(p.x, p.y, 320, '#ff5d5d', 'fx_slash', 2);
         Grid.query(p.x, p.y, 340, e => { if (dist2(p.x, p.y, e.x, e.y) < 320 * 320) this.hit(e, dmg, { uid: 'special', elem: 'none' }, 2, p); });
         break;
       }
@@ -961,7 +987,7 @@ const Game = {
   },
   openChest() {
     const R = this.run; const luck = R.stats.luck;
-    Sound.sfx('chest');
+    Sound.sfx('chest'); R.flash = { a: 0.5, c: '255,220,120' }; this.spark(R.player.x, R.player.y, '#ffd84a', 50, 420, 4, 1);
     const evs = this.availableEvolutions();
     const results = [];
     let coins = Math.floor(rand(10, 30) * (R.stage.coinMul || 1));
