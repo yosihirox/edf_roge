@@ -81,7 +81,7 @@ def build_graph(args, positive, negative, width, height, seed, ref_name=None):
             "seed": seed, "steps": args.steps, "cfg": args.cfg, "sampler_name": "euler_ancestral",
             "scheduler": "normal", "denoise": 1.0}},
         "7": {"class_type": "VAEDecode", "inputs": {"samples": ["6", 0], "vae": ["1", 2]}},
-        "8": {"class_type": "SaveImage", "inputs": {"images": ["7", 0], "filename_prefix": "edf_"}},
+        "8": {"class_type": "SaveImage", "inputs": {"images": ["7", 0], "filename_prefix": "surv_"}},
     }
     if ref_name:
         g["10"] = {"class_type": "LoadImage", "inputs": {"image": ref_name}}
@@ -178,10 +178,12 @@ def postprocess(data, asset):
         return data
     img = Image.open(io.BytesIO(data))
     kind = asset.get("kind")
-    if kind == "sprite":
+    if kind in ("sprite", "portrait"):
         img = remove_white_bg(img)
         s = asset.get("size") or 128
         img = img.resize((s, s), Image.LANCZOS)
+    elif kind == "tile":
+        img = img.convert("RGB").resize((512, 512), Image.LANCZOS)
     elif kind == "background":
         img = img.convert("RGB").resize((800, 480), Image.LANCZOS)
     elif kind == "icon":
@@ -204,7 +206,7 @@ def main():
     ap.add_argument("--host", default="127.0.0.1:8188")
     ap.add_argument("--ckpt", default="WAI-Nsfw-Illustrious-17.safetensors", help="使用するチェックポイント名")
     ap.add_argument("--only", help="生成するキー (カンマ区切り)")
-    ap.add_argument("--kind", choices=["sprite", "background", "illustration", "icon"])
+    ap.add_argument("--kind", choices=["sprite", "portrait", "tile", "background", "illustration", "icon"])
     ap.add_argument("--overwrite", action="store_true", help="既存の画像も作り直す")
     ap.add_argument("--steps", type=int, default=30)
     ap.add_argument("--cfg", type=float, default=7.0)
@@ -236,7 +238,7 @@ def main():
             print(f"skip {a['key']} (既にあります。--overwrite で再生成)")
             continue
         parts = [m["style"], a["prompt"]]
-        if a.get("kind") == "sprite":
+        if a.get("kind") in ("sprite", "portrait"):
             parts.append(m["sprite_suffix"])
         positive = ", ".join(parts)
         seed = args.seed if args.seed is not None else random.randint(0, 2**32 - 1)

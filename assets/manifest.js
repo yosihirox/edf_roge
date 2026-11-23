@@ -1,378 +1,373 @@
 // 画像素材の一覧。tools/comfy_generate.py もこのファイルを読みます。
-// assets/img/<key>.png が存在すればゲーム内でその画像を使い、無ければ図形で描画します。
-// ※ 代入の右辺は JSON として読める形（コメント・末尾カンマなし）を保ってください。
+// assets/img/<key>.png があればゲームで使い、無ければ図形で代わりに描画します。
+// ※ 右辺は JSON として読める形（コメント・末尾カンマなし）を保ってください。
 window.ASSET_MANIFEST = {
-  "style": "masterpiece, best quality, game sprite, military sci-fi, earth defense force style, clean lineart, flat colors",
-  "negative": "nsfw, worst quality, low quality, blurry, text, watermark, signature, logo, frame, border, multiple views, cropped",
+  "style": "masterpiece, best quality, anime style, fantasy game art, vibrant colors, clean lineart",
+  "negative": "nsfw, nude, cleavage, worst quality, low quality, blurry, text, watermark, signature, logo, frame, border, multiple views, cropped",
   "sprite_suffix": "single subject, centered, plain white background, simple background, no shadow",
   "assets": [
     {
-      "key": "unit_ranger",
+      "key": "chr_lumina",
+      "kind": "sprite",
       "size": 128,
-      "kind": "sprite",
       "width": 1024,
       "height": 1024,
-      "prompt": "1boy, soldier, green combat armor, full-face helmet with visor, holding assault rifle, backpack, full body, chibi, from side, facing right"
+      "prompt": "1girl, magical girl, long pink twintails, pink and white frilly magical girl outfit, star-tipped magic wand, cheerful smile, full body, chibi, standing, facing viewer"
     },
     {
-      "key": "unit_wingdiver",
+      "key": "chr_kaede",
+      "kind": "sprite",
       "size": 128,
-      "kind": "sprite",
       "width": 1024,
       "height": 1024,
-      "prompt": "1girl, flying soldier, pink and white armored bodysuit, small mechanical flight unit wings on back, holding energy weapon, short hair, visor headgear, full body, chibi, from side, facing right"
+      "prompt": "1girl, swordswoman, long black ponytail, red and white kimono-style light armor, katana, confident expression, full body, chibi, standing, facing viewer"
     },
     {
-      "key": "unit_fencer",
+      "key": "chr_noa",
+      "kind": "sprite",
       "size": 128,
-      "kind": "sprite",
       "width": 1024,
       "height": 1024,
-      "prompt": "heavy powered exoskeleton armor, bulky grey mecha suit, large tower shield on left arm, spear launcher on right arm, full helmet, no face visible, full body, chibi, from side, facing right"
+      "prompt": "1girl, android girl, short silver hair, glowing blue eyes, white and cyan sci-fi bodysuit, small floating drones, calm expression, full body, chibi, standing, facing viewer"
     },
     {
-      "key": "unit_airraider",
+      "key": "chr_mio",
+      "kind": "sprite",
       "size": 128,
-      "kind": "sprite",
       "width": 1024,
       "height": 1024,
-      "prompt": "1boy, soldier, orange and dark grey armor, radio backpack with antenna, holding targeting laser device, helmet with headset, full body, chibi, from side, facing right"
+      "prompt": "1girl, elf archer, long blonde braided hair, pointy ears, green hunter outfit with cape, wooden longbow, gentle smile, full body, chibi, standing, facing viewer"
     },
     {
-      "key": "enemy_antBlack",
-      "size": 96,
+      "key": "chr_shizuku",
       "kind": "sprite",
+      "size": 128,
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, giant black ant, monster, insect, glossy black carapace, large mandibles, full body, from side, facing right"
+      "prompt": "1girl, ice witch, long light blue hair, blue and white witch hat and robe, crystal staff, snowflakes, cool expression, full body, chibi, standing, facing viewer"
     },
     {
-      "key": "enemy_antRed",
-      "size": 96,
+      "key": "chr_rin",
       "kind": "sprite",
+      "size": 128,
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, giant red ant, monster, insect, crimson carapace, huge mandibles, full body, from side, facing right"
+      "prompt": "1girl, fox shrine maiden, orange hair, fox ears, fox tail, red and white miko outfit, paper talismans, small fox spirit companion, playful smile, full body, chibi, standing, facing viewer"
     },
     {
-      "key": "enemy_spider",
-      "size": 96,
-      "kind": "sprite",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, giant spider, monster, dark brown hairy body, long legs, full body, from side, facing right"
+      "key": "ptr_lumina",
+      "kind": "portrait",
+      "size": 768,
+      "width": 832,
+      "height": 1216,
+      "prompt": "1girl, magical girl, long pink twintails, pink and white frilly magical girl outfit, star-tipped magic wand, cheerful smile, full body, dynamic pose, looking at viewer"
     },
     {
-      "key": "enemy_roller",
-      "size": 96,
-      "kind": "sprite",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, giant pill bug, armored isopod monster, brown segmented shell, curled, full body, from side, facing right"
+      "key": "ptr_kaede",
+      "kind": "portrait",
+      "size": 768,
+      "width": 832,
+      "height": 1216,
+      "prompt": "1girl, swordswoman, long black ponytail, red and white kimono-style light armor, katana, confident expression, full body, dynamic pose, looking at viewer"
     },
     {
-      "key": "enemy_wasp",
-      "size": 96,
+      "key": "ptr_noa",
+      "kind": "portrait",
+      "size": 768,
+      "width": 832,
+      "height": 1216,
+      "prompt": "1girl, android girl, short silver hair, glowing blue eyes, white and cyan sci-fi bodysuit, small floating drones, calm expression, full body, dynamic pose, looking at viewer"
+    },
+    {
+      "key": "ptr_mio",
+      "kind": "portrait",
+      "size": 768,
+      "width": 832,
+      "height": 1216,
+      "prompt": "1girl, elf archer, long blonde braided hair, pointy ears, green hunter outfit with cape, wooden longbow, gentle smile, full body, dynamic pose, looking at viewer"
+    },
+    {
+      "key": "ptr_shizuku",
+      "kind": "portrait",
+      "size": 768,
+      "width": 832,
+      "height": 1216,
+      "prompt": "1girl, ice witch, long light blue hair, blue and white witch hat and robe, crystal staff, snowflakes, cool expression, full body, dynamic pose, looking at viewer"
+    },
+    {
+      "key": "ptr_rin",
+      "kind": "portrait",
+      "size": 768,
+      "width": 832,
+      "height": 1216,
+      "prompt": "1girl, fox shrine maiden, orange hair, fox ears, fox tail, red and white miko outfit, paper talismans, small fox spirit companion, playful smile, full body, dynamic pose, looking at viewer"
+    },
+    {
+      "key": "enemy_slime",
       "kind": "sprite",
+      "size": 96,
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, giant wasp, flying insect monster, yellow and black stripes, translucent wings, stinger, full body, from side, facing right"
+      "prompt": "no humans, cute green slime monster, blob, glossy, full body, single monster"
+    },
+    {
+      "key": "enemy_bat",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, purple bat monster, spread wings, flying, full body, single monster"
+    },
+    {
+      "key": "enemy_skeleton",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, small skeleton warrior monster, rusty sword, full body, single monster"
+    },
+    {
+      "key": "enemy_ghost",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, white ghost monster, floating, sheet ghost, glowing eyes, full body, single monster"
+    },
+    {
+      "key": "enemy_mushroom",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, walking mushroom monster, red cap with white spots, angry face, full body, single monster"
+    },
+    {
+      "key": "enemy_wolf",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, grey wolf monster, snarling, running pose, full body, single monster"
+    },
+    {
+      "key": "enemy_imp",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, small red imp demon, bat wings, holding fireball, full body, single monster"
+    },
+    {
+      "key": "enemy_bomb",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, round black bomb monster with lit fuse, angry eyes, full body, single monster"
+    },
+    {
+      "key": "enemy_bigslime",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, big blue slime monster with crown, blob, full body, single monster"
+    },
+    {
+      "key": "enemy_golem",
+      "kind": "sprite",
+      "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, stone golem monster, mossy rocks, glowing runes, full body, single monster"
     },
     {
       "key": "enemy_drone",
+      "kind": "sprite",
       "size": 96,
-      "kind": "sprite",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, alien drone, small flying saucer, silver metallic disc, red glowing core, sci-fi, full body, from side, facing right"
+      "prompt": "no humans, hostile robot drone, red sensor eye, metallic, hovering, full body, single monster"
     },
     {
-      "key": "enemy_colonist",
-      "size": 128,
+      "key": "enemy_snowman",
       "kind": "sprite",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, alien creature, frog-like giant humanoid alien, olive green skin, holding alien rifle, full body, from side, facing right"
-    },
-    {
-      "key": "enemy_android",
       "size": 96,
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, evil snowman monster, icicle arms, full body, single monster"
+    },
+    {
+      "key": "boss_treant",
       "kind": "sprite",
+      "size": 256,
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, white humanoid android, faceless robot, sleek white armor plates, full body, from side, facing right"
+      "prompt": "no humans, giant evil tree monster boss, glowing red eyes, twisted branches, full body"
     },
     {
-      "key": "enemy_cosmonaut",
-      "size": 128,
+      "key": "boss_frostdragon",
       "kind": "sprite",
+      "size": 256,
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, giant armored alien, navy blue heavy power armor, alien soldier, large plasma gun, full body, from side, facing right"
+      "prompt": "no humans, ice dragon boss, crystal scales, spread wings, roaring, full body"
     },
     {
-      "key": "enemy_erginus",
-      "size": 192,
+      "key": "boss_mechtitan",
       "kind": "sprite",
+      "size": 256,
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, giant kaiju, reptilian monster, purple scales, spikes on back, glowing eyes, full body, from side, facing right"
+      "prompt": "no humans, giant battle robot boss, heavy armor, red visor, cannons, full body"
     },
     {
-      "key": "enemy_mothership",
-      "size": 224,
-      "kind": "sprite",
+      "key": "tile_forest",
+      "kind": "tile",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, alien mothership, huge silver flying saucer, glowing hatches underneath, sci-fi spaceship, full body, from side, facing right"
+      "prompt": "no humans, top-down view, seamless texture, forest floor grass with small flowers and dirt patches, flat ground, game texture, no objects, no shadow"
     },
     {
-      "key": "bg_city",
-      "size": 0,
-      "kind": "background",
-      "width": 1344,
-      "height": 832,
-      "prompt": "no humans, top-down view, aerial view, ruined city streets, destroyed buildings, rubble, craters, overcast, game map background, muted colors"
+      "key": "tile_snow",
+      "kind": "tile",
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view, seamless texture, snowy ground with ice patches and footprints, flat ground, game texture, no objects, no shadow"
     },
     {
-      "key": "bg_mountain",
-      "size": 0,
-      "kind": "background",
-      "width": 1344,
-      "height": 832,
-      "prompt": "no humans, top-down view, aerial view, mountain military base, rocky terrain, dirt roads, forest patches, game map background, muted colors"
+      "key": "tile_ruins",
+      "kind": "tile",
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view, seamless texture, cracked stone pavement of ruined city with moss, flat ground, game texture, no objects, no shadow"
     },
     {
-      "key": "bg_coast",
-      "size": 0,
-      "kind": "background",
-      "width": 1344,
-      "height": 832,
-      "prompt": "no humans, top-down view, aerial view, coastline, sandy beach, harbor ruins, sea, game map background, muted colors"
+      "key": "tile_desert",
+      "kind": "tile",
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view, seamless texture, desert sand with small rocks and dry cracks, flat ground, game texture, no objects, no shadow"
     },
     {
-      "key": "title",
-      "size": 0,
-      "kind": "illustration",
-      "width": 1344,
-      "height": 768,
-      "prompt": "group of soldiers fighting giant ants in a ruined city, green armored soldier with rifle, flying girl soldier with mechanical wings, heavy armored exosuit with shield, soldier calling airstrike, alien mothership in sky, dramatic, explosion, wide shot, key visual"
+      "key": "tile_station",
+      "kind": "tile",
+      "width": 1024,
+      "height": 1024,
+      "prompt": "no humans, top-down view, seamless texture, sci-fi metal floor panels with glowing lines, flat ground, game texture, no objects, no shadow"
     },
     {
-      "key": "card_af14",
-      "size": 0,
+      "key": "icon_wand",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, futuristic assault rifle, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, magic wand shooting star bolts, centered, simple dark background"
     },
     {
-      "key": "card_storkaf",
-      "size": 0,
+      "key": "icon_katana",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, futuristic assault rifle, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, katana sword with slash arc, centered, simple dark background"
     },
     {
-      "key": "card_blazer",
-      "size": 0,
+      "key": "icon_beam",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, red laser rifle, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, glowing cyan laser beam emitter, centered, simple dark background"
     },
     {
-      "key": "card_slaughter",
-      "size": 0,
+      "key": "icon_bow",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, futuristic shotgun, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, wooden bow and arrow, centered, simple dark background"
     },
     {
-      "key": "card_lysander",
-      "size": 0,
+      "key": "icon_ice",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, long sniper rifle, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, ice crystal shard, centered, simple dark background"
     },
     {
-      "key": "card_stringer",
-      "size": 0,
+      "key": "icon_fox",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, sleek railgun sniper, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, orange fox spirit flame, centered, simple dark background"
     },
     {
-      "key": "card_goliath",
-      "size": 0,
+      "key": "icon_orbit",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, rocket launcher, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, orbiting glowing magic orbs, centered, simple dark background"
     },
     {
-      "key": "card_mlra",
-      "size": 0,
+      "key": "icon_aura",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, multiple missile launcher pod, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, radiant holy aura circle, centered, simple dark background"
     },
     {
-      "key": "card_rapier",
-      "size": 0,
+      "key": "icon_lightning",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, energy blade emitter gun, pink plasma, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, lightning bolt from cloud, centered, simple dark background"
     },
     {
-      "key": "card_rapierg",
-      "size": 0,
+      "key": "icon_fire",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, energy blade emitter gun, pink plasma, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, fire bomb explosion, centered, simple dark background"
     },
     {
-      "key": "card_thunderbow",
-      "size": 0,
+      "key": "icon_boomerang",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, lightning bow weapon, electric arcs, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, spinning golden boomerang, centered, simple dark background"
     },
     {
-      "key": "card_magblaster",
-      "size": 0,
+      "key": "icon_mine",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, long energy beam rifle, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, magic rune trap circle, centered, simple dark background"
     },
     {
-      "key": "card_raijin",
-      "size": 0,
+      "key": "icon_tornado",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, huge charge beam rifle, yellow lightning, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, green whirlwind tornado, centered, simple dark background"
     },
     {
-      "key": "card_plasmacannon",
-      "size": 0,
+      "key": "icon_holywater",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, plasma cannon, purple glow, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, blue holy water flask, centered, simple dark background"
     },
     {
-      "key": "card_mirage",
-      "size": 0,
+      "key": "icon_drone",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, homing laser emitter, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, small attack drone, centered, simple dark background"
     },
     {
-      "key": "card_blasthole",
-      "size": 0,
+      "key": "icon_meteor",
       "kind": "icon",
       "width": 1024,
       "height": 1024,
-      "prompt": "no humans, weapon icon, pile bunker spear arm weapon, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_flashing",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, pile bunker spear arm weapon, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_gatling",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, heavy arm-mounted gatling cannon, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_handcannon",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, heavy arm-mounted gatling cannon, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_galleon",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, rapid fire autocannon, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_dexter",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, heavy arm-mounted gatling cannon, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_strafe",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, ground attack aircraft strafing, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_howitzer",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, artillery howitzer shells falling, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_spritefall",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, satellite laser beam from orbit, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_multicopter",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, armed quadcopter drone, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_killercopter",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, attack helicopter drone, item illustration, dark background, centered"
-    },
-    {
-      "key": "card_limpet",
-      "size": 0,
-      "kind": "icon",
-      "width": 1024,
-      "height": 1024,
-      "prompt": "no humans, weapon icon, sticky bomb launcher, item illustration, dark background, centered"
+      "prompt": "no humans, game item icon, falling meteor with fire trail, centered, simple dark background"
     }
   ]
 };
