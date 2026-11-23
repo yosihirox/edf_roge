@@ -163,6 +163,7 @@ const UI = {
       case 'resume': this.togglePause(); break;
       case 'quit': this.confirmBox('あきらめる', 'このプレイを終了しますか？<br>ここまでの報酬は受け取れます。', 'あきらめる', () => { Game.run.paused = false; Game.finish(false); }); break;
       case 'suspend': Save.saveRun(Game.snapshot()); Save.write(); this.closeModal(); this.wipe(() => { Game.run = null; Sound.stopBgm(); this.home(); }); break;
+      case 'pad': sv.settings.pad = v; Save.write(); this.applyPad(); if (Game.run) this.renderPause(); else this.settings(); break;
       case 'toggleRun': sv.settings[v] = !sv.settings[v]; Save.write(); this.renderPause(); break;
       case 'resultOk': this.wipe(() => { this.closeModal(); Game.run = null; this.home(); }); break;
       case 'retry': this.wipe(() => { this.closeModal(); Game.run = null; this.startRun(); }); break;
@@ -196,7 +197,7 @@ const UI = {
             <button class="cta" data-act="prep"><span class="ctamain">出撃する</span><span class="ctasub">キャラクターとステージを選ぶ</span></button>
             <div class="sect">拠点</div>
             <div class="facs">${facs}</div>
-            <p class="hint">移動だけで戦えます（WASD／矢印キー、スマホは画面の下側をなぞる）。必殺技は Space か右下のボタン。</p>
+            <p class="hint">移動だけで戦えます（WASD／矢印キー、スマホは画面下の十字キー）。必殺技は Space か画面下のボタン。</p>
           </div>
         </div>
       </div>`);
@@ -295,7 +296,7 @@ const UI = {
     Game.start(opts);
     this.hideScreen();
     $('#game').classList.remove('dead'); $('#banner').innerHTML = '';
-    $('#hud').classList.remove('hidden');
+    $('#hud').classList.remove('hidden'); this.applyPad();
     $('#speedBtn').textContent = 'x1'; $('#speedBtn').classList.remove('on');
     const R = Game.run; const st = R.stage;
     const face = this.charSrc(R.char); $('#specialFace').innerHTML = face ? `<img src="${face}" alt="">` : '';
@@ -304,6 +305,13 @@ const UI = {
     const goal = st.special === 'abyss' ? 'どこまで潜れるか' : st.special === 'bossrush' ? 'ボスをすべて倒せ' : st.special === 'throne' ? '裏ボスを倒せ' : `${Math.floor(st.time / 60)}分間 生き残れ`;
     setTimeout(() => this.banner('stage', st.name + (R.hard ? ' ★' : ''), resume ? 'つづきから' : goal), 350);
   },
+
+  // 十字キーの位置を選ぶボタン。必殺技ボタンは十字キーと反対側に置く
+  padRow() {
+    const cur = Save.data.settings.pad;
+    return `<div class="padrow"><b>十字キーの位置</b>${[['left', '左'], ['center', '中央'], ['right', '右']].map(([k, n]) => `<button data-act="pad" data-v="${k}" class="${cur === k ? 'on' : ''}">${n}</button>`).join('')}</div>`;
+  },
+  applyPad() { $('#hud').classList.toggle('padR', Save.data.settings.pad === 'right'); },
 
   // ---------- HUD ----------
   hud() {
@@ -375,6 +383,7 @@ const UI = {
       <div class="pchips">${ps || '<span class="note">パッシブなし</span>'}</div>
       <p class="note center">合計ダメージ ${fmtNum(R.dmgTotal)} ・ 振り直し ${R.rerolls} ・ 封印 ${R.banishes}${R.player.revives ? ` ・ 復活 ${R.player.revives}` : ''}</p>
       <div class="switches">${sw('dmgNum', 'ダメージ数字')}${sw('shake', '揺れ・フラッシュ')}${sw('light', '軽量モード')}</div>
+      ${Input.touch ? this.padRow() : ''}
       <button class="primary big" data-act="resume">${ic('play')}再開する</button>
       <div class="row btnrow"><button data-act="suspend">中断して拠点へ</button><button data-act="quit" class="danger">あきらめる</button></div>`, anim ? 'pop' : '');
   },
@@ -783,6 +792,7 @@ settings() {
       <button data-act="vol" data-v="${k}" data-d="0.1" aria-label="上げる">＋</button></div>`;
     this.show('settings', `${this.header('設定')}
       <div class="sect">サウンド</div><div class="box">${vol('bgm', 'BGM')}${vol('sfx', '効果音')}</div>
+      <div class="sect">操作（スマホ）</div><div class="box">${this.padRow()}</div>
       <div class="sect">画面</div>
       <div class="switches col">${tg('dmgNum', 'ダメージ数字', '敵に与えたダメージを表示します')}${tg('shake', '揺れ・フラッシュ', '画面の揺れ、光、振動の演出')}${tg('light', '軽量モード', '演出と敵の数を減らして軽くします')}</div>
       <div class="sect">セーブデータ</div>

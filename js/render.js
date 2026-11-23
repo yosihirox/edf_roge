@@ -13,38 +13,56 @@ const Input = {
     });
     window.addEventListener('keyup', e => { this.keys[e.code] = false; });
     window.addEventListener('blur', () => { this.keys = {}; this.joy = null; });
-    // スマホ縦画面では、画面の下側だけを操作エリアにする（指でキャラや敵を隠さないため）。
-    // エリア内ならどこを触っても、そこを中心にしたスティックが出る
+    // スマホ：画面下の決まった位置に十字キーを置く（指でキャラや敵を隠さない・押す場所を迷わない）。
+    // PCのマウス：触った位置を中心にしたスティック
     canvas.addEventListener('pointerdown', e => {
       Sound.init(); Sound.resume();
-      const r = canvas.getBoundingClientRect();
       if (e.pointerType === 'touch') this.touch = true;
-      if (this.zoneOn() && e.clientY - r.top < r.height * (1 - this.ZONE)) { this.hintT = 1.6; return; }
-      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 取れなくても操作は続けられる */ }
-      this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: e.clientX, y: e.clientY };
+      const r = canvas.getBoundingClientRect(); const x = e.clientX - r.left, y = e.clientY - r.top;
+      if (this.touch) {
+        const p = this.pad();
+        // 十字キーの少し外側まで反応する。離れた場所は無視して、十字キーを光らせて知らせる
+        if (Math.hypot(x - p.x, y - p.y) > p.r + 46) { this.hintT = 1.2; return; }
+        try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 取れなくても操作は続けられる */ }
+        this.joy = { id: e.pointerId, pad: true, x, y };
+        return;
+      }
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) { /* 同上 */ }
+      this.joy = { id: e.pointerId, ox: x, oy: y, x, y };
     });
     canvas.addEventListener('pointermove', e => {
       const j = this.joy; if (!j || j.id !== e.pointerId) return;
-      j.x = e.clientX; j.y = e.clientY;
-      // 相対ドラッグ：指が外枠を越えたら、スティックの中心も指についてくる。
-      // 向きを変える時に指を大きく戻さなくて済む
-      const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy);
-      if (d > this.RAD) { j.ox = j.x - dx / d * this.RAD; j.oy = j.y - dy / d * this.RAD; }
+      const r = canvas.getBoundingClientRect(); j.x = e.clientX - r.left; j.y = e.clientY - r.top;
     });
     const end = e => { if (this.joy && this.joy.id === e.pointerId) this.joy = null; };
     canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
   },
-  ZONE: 0.36,   // 操作エリアの高さ（画面の下から何割か）
-  RAD: 38,      // スティックの半径。小さな指の動きで最大速度になる
+  PAD_R: 64,    // 十字キーの大きさ（中心から端まで）
   touch: (typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches), hintT: 0,
-  zoneOn() { return this.touch && Render.h > Render.w * 1.15; },
+  // 十字キーの位置（設定で 左・中央・右 を選べる）
+  pad() {
+    const w = Render.w, h = Render.h, r = this.PAD_R, pos = Save.data.settings.pad;
+    const x = pos === 'right' ? w - r - 30 : pos === 'center' ? w / 2 : r + 30;
+    return { x, y: h - r - (h > w ? 54 : 30), r };
+  },
+  // 十字キーで押されている向き（8方向）。押していなければ null
+  padDir() {
+    const j = this.joy; if (!j || !j.pad) return null;
+    const p = this.pad(); const dx = j.x - p.x, dy = j.y - p.y;
+    if (Math.hypot(dx, dy) < 11) return null;
+    const a = Math.round(Math.atan2(dy, dx) / (Math.PI / 4)) * (Math.PI / 4);
+    return { x: Math.round(Math.cos(a)), y: Math.round(Math.sin(a)) };
+  },
   vector() {
     let x = 0, y = 0; const k = this.keys;
     if (k.KeyA || k.ArrowLeft) x -= 1; if (k.KeyD || k.ArrowRight) x += 1;
     if (k.KeyW || k.ArrowUp) y -= 1; if (k.KeyS || k.ArrowDown) y += 1;
     if (this.joy) {
-      const dx = this.joy.x - this.joy.ox, dy = this.joy.y - this.joy.oy; const d = Math.hypot(dx, dy);
-      if (d > 5) { const m = Math.min(1, (d - 5) / (this.RAD - 9)); x = dx / d * m; y = dy / d * m; }
+      if (this.joy.pad) { const d = this.padDir(); if (d) { x = d.x; y = d.y; } }
+      else {
+        const dx = this.joy.x - this.joy.ox, dy = this.joy.y - this.joy.oy; const d = Math.hypot(dx, dy);
+        if (d > 6) { const m = Math.min(1, d / 50); x = dx / d * m; y = dy / d * m; }
+      }
     }
     const l = Math.hypot(x, y); if (l > 1) { x /= l; y /= l; }
     return { x, y };
@@ -258,30 +276,41 @@ const Render = {
     };
     for (const o of R.drops) if (o.kind === 'chest') mark(o.x, o.y, '#ffd166', 'item_chest');
     for (const b of R.bossIds) if (!b.dead) mark(b.x, b.y, '#ff4f7b', b.def.img);
-    // 操作エリアの案内（開始直後と、エリアの外を触った時だけ、うっすら表示）
-    if (Input.zoneOn() && !R.over) {
+    // 十字キー（スマホ）
+    if (Input.touch && !R.over) {
       if (Input.hintT > 0) Input.hintT -= 1 / 60;
-      const a = Math.min(1, Math.max(Input.joy ? 0 : R.intro, Input.hintT));
-      if (a > 0) {
-        const zy = this.h * (1 - Input.ZONE);
-        const g = c.createLinearGradient(0, zy, 0, this.h); g.addColorStop(0, 'rgba(126,224,255,0)'); g.addColorStop(0.25, `rgba(126,224,255,${0.16 * a})`); g.addColorStop(1, `rgba(126,224,255,${0.05 * a})`);
-        c.fillStyle = g; c.fillRect(0, zy, this.w, this.h - zy);
-        c.strokeStyle = `rgba(190,240,255,${0.55 * a})`; c.lineWidth = 1.5; c.setLineDash([6, 8]); c.beginPath(); c.moveTo(16, zy + 14); c.lineTo(this.w - 16, zy + 14); c.stroke(); c.setLineDash([]);
-        c.fillStyle = `rgba(255,255,255,${0.9 * a})`; c.font = `700 14px ${this.font}`; c.textAlign = 'center'; c.shadowColor = 'rgba(0,0,0,.8)'; c.shadowBlur = 6;
-        c.fillText('この下をなぞって移動', this.w / 2, zy + 44); c.shadowBlur = 0;
+      const pd = Input.pad(), r = pd.r, arm = r * 0.36, dir = Input.padDir();
+      const hint = Math.max(0, Math.min(1, Math.max(Input.joy ? 0 : R.intro, Input.hintT)));
+      c.save(); c.translate(pd.x, pd.y);
+      if (hint > 0) { c.globalAlpha = hint * (0.6 + Math.sin(t * 10) * 0.4); c.strokeStyle = '#7ee0ff'; c.lineWidth = 3; c.beginPath(); c.arc(0, 0, r + 14, 0, TAU); c.stroke(); c.globalAlpha = 1; }
+      c.fillStyle = 'rgba(13,11,30,.34)'; c.beginPath(); c.arc(0, 0, r + 8, 0, TAU); c.fill();
+      // 十字の形
+      c.beginPath();
+      c.moveTo(-arm, -r); c.lineTo(arm, -r); c.lineTo(arm, -arm); c.lineTo(r, -arm); c.lineTo(r, arm); c.lineTo(arm, arm);
+      c.lineTo(arm, r); c.lineTo(-arm, r); c.lineTo(-arm, arm); c.lineTo(-r, arm); c.lineTo(-r, -arm); c.lineTo(-arm, -arm); c.closePath();
+      c.lineJoin = 'round'; c.fillStyle = 'rgba(38,32,80,.72)'; c.fill(); c.strokeStyle = 'rgba(255,255,255,.55)'; c.lineWidth = 2; c.stroke();
+      // 矢印。押している向きは光らせる
+      for (const [ax, ay] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+        const on = dir && ((ax && dir.x === ax) || (ay && dir.y === ay));
+        if (on) { c.fillStyle = 'rgba(255,126,185,.85)'; c.shadowColor = '#ff7eb9'; c.shadowBlur = 16; this.rr(c, ax * (r + arm) / 2 - (ax ? (r - arm) / 2 : arm) + 2, ay * (r + arm) / 2 - (ay ? (r - arm) / 2 : arm) + 2, (ax ? r - arm : arm * 2) - 4, (ay ? r - arm : arm * 2) - 4, 7); c.fill(); c.shadowBlur = 0; }
+        const cx = ax * r * 0.7, cy2 = ay * r * 0.7, q = 8;
+        c.fillStyle = on ? '#fff' : 'rgba(255,255,255,.75)'; c.beginPath();
+        c.moveTo(cx + ax * q, cy2 + ay * q); c.lineTo(cx - ax * q * 0.5 + ay * q, cy2 - ay * q * 0.5 + ax * q); c.lineTo(cx - ax * q * 0.5 - ay * q, cy2 - ay * q * 0.5 - ax * q); c.closePath(); c.fill();
       }
+      c.fillStyle = 'rgba(255,255,255,.22)'; c.beginPath(); c.arc(0, 0, arm * 0.45, 0, TAU); c.fill();
+      if (hint > 0) { c.globalAlpha = hint; c.fillStyle = '#fff'; c.font = `700 13px ${this.font}`; c.textAlign = 'center'; c.shadowColor = 'rgba(0,0,0,.9)'; c.shadowBlur = 6; c.fillText('十字キーで移動', 0, -r - 24); }
+      c.restore();
     }
-    // スティック
-    if (Input.joy && !R.over) {
-      const j = Input.joy; const r = this.cv.getBoundingClientRect();
-      const ox = j.ox - r.left, oy = j.oy - r.top;
-      const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy), m = Math.min(d, Input.RAD);
+    // スティック（PCのマウス操作）
+    if (Input.joy && !Input.joy.pad && !R.over) {
+      const j = Input.joy; const ox = j.ox, oy = j.oy;
+      const dx = j.x - j.ox, dy = j.y - j.oy, d = Math.hypot(dx, dy), m = Math.min(d, 50);
       c.save();
       c.fillStyle = 'rgba(255,255,255,.07)'; c.strokeStyle = 'rgba(255,255,255,.35)'; c.lineWidth = 2;
-      c.beginPath(); c.arc(ox, oy, Input.RAD + 6, 0, TAU); c.fill(); c.stroke();
+      c.beginPath(); c.arc(ox, oy, 52, 0, TAU); c.fill(); c.stroke();
       const kx = ox + (d ? dx / d * m : 0), ky = oy + (d ? dy / d * m : 0);
       const g = c.createRadialGradient(kx - 6, ky - 6, 2, kx, ky, 24); g.addColorStop(0, 'rgba(255,255,255,.95)'); g.addColorStop(1, 'rgba(255,170,215,.75)');
-      c.fillStyle = g; c.shadowColor = 'rgba(255,126,185,.8)'; c.shadowBlur = 14; c.beginPath(); c.arc(kx, ky, 19, 0, TAU); c.fill();
+      c.fillStyle = g; c.shadowColor = 'rgba(255,126,185,.8)'; c.shadowBlur = 14; c.beginPath(); c.arc(kx, ky, 23, 0, TAU); c.fill();
       c.restore();
     }
     if (R.cutin) this.drawCutin(c, R.cutin);
