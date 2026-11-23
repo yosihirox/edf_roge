@@ -64,7 +64,7 @@ const Game = {
       spawnAcc: 0, nextElite: 150, nextRush: 200, bossSpawned: false, bossIds: [], bossQueue: null,
       levelQueue: 0, pendingChest: 0, earnedEquip: [], hitstop: 0, shake: 0, cutin: null,
       floor: 1, cleared: false, killsBy: {}, rainT: 0, spinBeam: null, parts: [], flash: null,
-      ghosts: [], hurtFlash: 0, zoomKick: 0, slowmo: 0, stopCd: 0, resumeT: 0, xpPulse: false, intro: 1.2,
+      ghosts: [], hurtFlash: 0, zoomKick: 0, slowmo: 0, stopCd: 0, resumeT: 0, xpPulse: false, intro: 3.5,
     };
     if (R.support) R.sup = { x: -30, y: 20, r: 14 };
     this.recalc();
@@ -255,7 +255,7 @@ const Game = {
     const v = Render.viewSize();
     const rad = Math.hypot(v.w, v.h) / 2 + 40 + extra;
     const a = Math.random() * TAU;
-    return { x: p.x + Math.cos(a) * rad, y: p.y + Math.sin(a) * rad };
+    return { x: p.x + Math.cos(a) * rad, y: p.y + Render.camY() + Math.sin(a) * rad };
   },
   spawnEnemy(type, pos, scale = 1) {
     const R = this.run;
@@ -344,7 +344,7 @@ const Game = {
   },
   randomOnScreen(n) {
     const R = this.run; const v = Render.viewSize(); const p = R.player;
-    const list = R.enemies.filter(e => !e.dead && Math.abs(e.x - p.x) < v.w / 2 && Math.abs(e.y - p.y) < v.h / 2);
+    const list = R.enemies.filter(e => !e.dead && Math.abs(e.x - p.x) < v.w / 2 && Math.abs(e.y - p.y - Render.camY()) < v.h / 2);
     const out = [];
     for (let i = 0; i < n && list.length; i++) out.push(list.splice(Math.floor(Math.random() * list.length), 1)[0]);
     return out;
