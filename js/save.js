@@ -22,7 +22,7 @@ function newSave() {
     curse: 0,
     challenge: null,
     last: { char: 'lumina', support: null, stage: 'forest', hard: false },   // 前回選んだキャラ・ステージ
-    settings: { dmgNum: true, light: false, shake: true, bgm: 0.4, sfx: 0.5 },
+    settings: { dmgNum: true, light: false, shake: true, bgm: 0.4, sfx: 0.5, pad: 'left' },
     stats: {
       runs: 0, kills: 0, playTime: 0, coinsTotal: 0, bestLevel: 0, bestDamage: 0, bestCurse: -1,
       bestRarity: -1, abyssBest: 0, bossrushClear: false, reborn: 0, charsUnlocked: 3, bestCharLv: 1,
